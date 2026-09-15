@@ -1,0 +1,62 @@
+  <footer class="site-foot">
+    <div class="wrap foot-grid">
+      <div>
+        <div class="logo foot-logo">
+          <span class="logo-mark">{{ company.name[:1] }}</span>
+          <strong>{{ company.name }}</strong>
+        </div>
+        <p>Catálogo del live. Pedís por WhatsApp, pagás con QR y coordinamos la entrega.</p>
+      </div>
+      <div id="ayuda">
+        <h4>Ayuda y soporte</h4>
+        <ul>
+          <li>Pagos con QR Bolivia</li>
+          <li>Entrega programada o a coordinar</li>
+          <li>Consultas de stock en el live</li>
+          {% if wa_display %}<li>{{ wa_display }}</li>{% endif %}
+        </ul>
+      </div>
+      <div>
+        <h4>Comprá con nosotros</h4>
+        <ul>
+          <li>Mismo inventario del dashboard</li>
+          <li>Pedido con código LV-XXXX si viene del live</li>
+          <li>Seguimiento por WhatsApp</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Acceso rápido</h4>
+        <ul>
+          <li><a href="/t/{{ company.slug }}#catalogo">Catálogo</a></li>
+          <li><a href="/t/{{ company.slug }}#colecciones">Colecciones</a></li>
+          {% if wa_e164 %}<li><a href="https://wa.me/{{ wa_e164 }}" target="_blank" rel="noopener">Escribir por WhatsApp</a></li>{% endif %}
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom wrap">
+      <span>© {{ company.name }}</span>
+      <span class="pay-note">QR · WhatsApp · Envíos</span>
+    </div>
+  </footer>
+
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-box">
+      <header>
+        <h2>Tu pedido</h2>
+        <button type="button" id="cart-close">Cerrar</button>
+      </header>
+      <ul id="cart-lines"></ul>
+      <p class="total">Total: <strong id="cart-total">0</strong> {{ currency }}</p>
+      <a class="wa-cta" id="cart-wa" href="#" target="_blank" rel="noopener">Pedir por WhatsApp</a>
+      <p class="hint">Se abre WhatsApp con el detalle. Confirmamos stock, QR y entrega (programada o a coordinar).</p>
+    </div>
+  </aside>
+
+  {% if wa_e164 %}
+  <a class="float-wa" href="https://wa.me/{{ wa_e164 }}" target="_blank" rel="noopener" aria-label="WhatsApp">✉</a>
+  {% endif %}
+  <button type="button" class="float-top" id="to-top" aria-label="Arriba">↑</button>
+
+  <script src="/static/shop.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}{{ flow.name }} · Flow Studio{% endblock %}
+{% block extra_wrap %} wrap-studio{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/flow_studio.css?v=4">
+<div id="studio" data-flow-id="{{ flow.id }}" data-status="{{ flow.status }}">
+  <div class="fs-toolbar">
+    <a href="/flujos" class="btn">← Flujos</a>
+    <label class="fs-switch">Flujo a editar
+      <select id="fs-switch"></select>
+    </label>
+    <input id="fs-name" value="{{ flow.name }}" maxlength="160">
+    <span id="fs-status" class="badge {% if flow.status == 'published' %}live{% endif %}">{% if flow.status == 'published' %}en uso{% else %}borrador{% endif %}</span>
+    {% if motor %}
+      <span class="badge live">motor {{ motor.provider }}</span>
+    {% else %}
+      <span class="badge cancelado">motor apagado</span>
+    {% endif %}
+    <span id="fs-msg" class="muted"></span>
+    <button class="btn" type="button" id="fs-save">Guardar</button>
+    {% if flow.status != 'published' %}
+    <button class="btn ok" type="button" id="fs-publish">Usar en WhatsApp</button>
+    {% else %}
+    <button class="btn" type="button" id="fs-unpublish">Dejar de usar</button>
+    {% endif %}
+  </div>
+  <p class="fs-active-hint muted" id="fs-active-hint">
+    {% if flow.status == 'published' %}
+      Este flujo atiende WhatsApp y el simulador.
+    {% else %}
+      Este es un borrador. WhatsApp sigue con el flujo publicado (o el bot de código) hasta que pulses <strong>Usar en WhatsApp</strong>.
+    {% endif %}
+  </p>
+  <div class="fs-layout">
+    <aside class="fs-palette">
+      <h2>Nodos</h2>
+      {% for item in palette %}
+      <button type="button" class="fs-pal-item" data-type="{{ item.type }}">
+        <strong>{{ item.label }}</strong>
+        <span>{{ item.hint }}</span>
+      </button>
+      {% endfor %}
+      <p class="muted fs-hint">Clic para agregar. El panel de la derecha configura el nodo y sus salidas.</p>
+    </aside>
+    <div class="fs-canvas-wrap" id="fs-canvas-wrap">
+      <svg class="fs-edges" id="fs-edges"></svg>
+      <div class="fs-nodes" id="fs-nodes"></div>
+    </div>
+    <aside class="fs-side">
+      <div class="fs-wire" id="fs-wire">
+        <h2>Conectar nodos</h2>
+        <p class="muted">Elegí origen y destino. No hace falta usar los puntitos del lienzo.</p>
+        <label>Desde<br><select id="wire-from"></select></label>
+        <label>Hacia<br><select id="wire-to"></select></label>
+        <label>Cuando<br>
+          <select id="wire-trig">
+            <option value="always">Siempre</option>
+            <option value="default">Si no coincide otra</option>
+            <option value="keyword">Palabras clave</option>
+            <option value="is_digit">Es un número</option>
+            <option value="is_image">Es una foto</option>
+            <option value="found">Producto encontrado</option>
+            <option value="not_found">Producto no encontrado</option>
+            <option value="transition">Transición IA</option>
+          </select>
+        </label>
+        <label>Palabras / clave<br><input id="wire-key" placeholder="hola,menu"></label>
+        <button type="button" class="btn primary" id="wire-link">Conectar</button>
+      </div>
+      <div class="fs-inspector" id="fs-inspector">
+        <p class="muted">Seleccioná un nodo.</p>
+      </div>
+      <details class="fs-preview">
+        <summary>Simular</summary>
+        <p class="muted">Usa este flujo (aunque sea borrador). No hace falta WhatsApp real.</p>
+        <label>Teléfono<br><input id="fs-sim-phone" value="59170001111"></label>
+        <label>Mensaje<br><input id="fs-sim-text" value="hola"></label>
+        <button class="btn primary" type="button" id="fs-sim">Enviar</button>
+        <pre id="fs-sim-out" class="fs-sim-out"></pre>
+      </details>
+    </aside>
+  </div>
+</div>
+<script src="/static/flow_studio.js?v=4"></script>
+{% endblock %}

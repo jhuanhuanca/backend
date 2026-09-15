@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Flujos · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Flow Studio</h1>
+<p class="muted">Editor de conversación tipo n8n. Un flujo <strong>publicado</strong> es el que atiende WhatsApp y el simulador. Si no hay ninguno publicado, sigue el bot de código.</p>
+
+<div class="panel" style="margin-bottom:16px">
+  <strong>WhatsApp usa ahora:</strong>
+  {% if active %}
+    <span class="badge live">{{ active.name }}</span>
+    <a href="/flujos/{{ active.id }}/editar">Abrir</a>
+  {% else %}
+    <span class="badge">bot de código</span>
+    <span class="muted">Publicá un flujo para reemplazarlo.</span>
+  {% endif %}
+</div>
+
+<div class="panel" style="margin-bottom:16px">
+  <strong>Motor IA:</strong>
+  {% if motor %}
+    <span class="badge live">{{ motor.status }} · {{ motor.provider }} · {{ motor.service }}</span>
+  {% else %}
+    <span class="badge cancelado">apagado</span>
+    <span class="muted">Levantá <code>motor-ia</code> en {{ motor_url }}</span>
+  {% endif %}
+</div>
+
+<div class="panel" style="margin-bottom:16px">
+  <form method="post" action="/flujos" class="inline">
+    <label>Nombre<br><input name="name" value="Venta WhatsApp" required></label>
+    <label>Plantilla<br>
+      <select name="template">
+        <option value="venta_catalogo">Muestra · Venta catálogo (local / interior)</option>
+        <option value="leads">Muestra · Catálogo o reunión</option>
+        <option value="venta">Venta simple (catálogo → QR)</option>
+        <option value="blank">En blanco</option>
+      </select>
+    </label>
+    <button class="btn primary" type="submit">Nuevo flujo</button>
+  </form>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Nombre</th><th>Estado</th><th>Nodos</th><th>Atender WhatsApp</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for f in flows %}
+    <tr>
+      <td>{{ f.name }}</td>
+      <td>
+        {% if f.status == 'published' %}
+          <span class="badge live">en uso</span>
+        {% else %}
+          <span class="badge">borrador</span>
+        {% endif %}
+      </td>
+      <td>{{ (f.definition.nodes or [])|length }}</td>
+      <td>
+        {% if f.status == 'published' %}
+          <form method="post" action="/flujos/{{ f.id }}/desactivar" class="inline">
+            <button class="btn" type="submit">Dejar de usar</button>
+          </form>
+        {% else %}
+          <form method="post" action="/flujos/{{ f.id }}/publicar" class="inline">
+            <button class="btn ok" type="submit">Usar este flujo</button>
+          </form>
+        {% endif %}
+      </td>
+      <td><a class="btn" href="/flujos/{{ f.id }}/editar">Editar</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">Todavía no hay flujos. Creá uno con la plantilla de venta.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

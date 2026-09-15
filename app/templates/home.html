@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Inicio</h1>
+<div class="cards">
+  <div class="card"><div class="n">{{ stats.orders }}</div><div class="l">Pedidos</div></div>
+  <div class="card"><div class="n">{{ stats.pending }}</div><div class="l">Pendiente pago</div></div>
+  <div class="card"><div class="n">{{ stats.paid }}</div><div class="l">Pagados</div></div>
+  <div class="card"><div class="n">{{ stats.delivering }}</div><div class="l">Por entregar</div></div>
+  <a class="card" href="/agenda" style="text-decoration:none;color:inherit">
+    <div class="n">{{ stats.appointments }}</div>
+    <div class="l">Reuniones</div>
+  </a>
+  <div class="card"><div class="n">{{ stats.lives }}</div><div class="l">Lives activos</div></div>
+  <div class="card"><div class="n">{{ stats.devices }}</div><div class="l">Dispositivos</div></div>
+</div>
+
+<div class="grid-2" style="margin-top:18px">
+  <section class="panel">
+    <h2>Pedidos recientes</h2>
+    {% if not recent %}<p class="muted">Todavía no hay pedidos. Probá el simulador WhatsApp o el live desde la granja.</p>{% endif %}
+    <table>
+      <thead><tr><th>Código</th><th>Cliente</th><th>Total</th><th>Estado</th></tr></thead>
+      <tbody>
+      {% for o in recent %}
+        <tr>
+          <td><a href="/pedidos/{{ o.id }}">{{ o.public_code }}</a></td>
+          <td>{{ o.customer.name if o.customer else o.customer_id }}</td>
+          <td>{{ o.total_amount }}</td>
+          <td><span class="badge {{ o.status }}">{{ order_status_label(o.status) }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <div>
+  <section class="panel">
+    <h2>Próximas reuniones</h2>
+    {% if not upcoming %}<p class="muted">Las inscripciones y presentaciones de negocio aparecen acá al agendarlas por WhatsApp.</p>{% endif %}
+    <table>
+      <thead><tr><th>Cuándo</th><th>Cliente</th><th>Tipo</th></tr></thead>
+      <tbody>
+      {% for a in upcoming %}
+        <tr>
+          <td>{{ a.window_label or "—" }}</td>
+          <td><a href="/whatsapp/chat/{{ a.phone }}">{{ a.customer_name or a.phone }}</a></td>
+          <td>
+            <span class="badge {{ a.purpose }}">{{ purpose_label(a.purpose) }}</span>
+            <span class="muted">{{ kind_label(a.meeting_kind) }}</span>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p style="margin-top:10px"><a class="btn" href="/agenda">Ver agenda</a></p>
+  </section>
+  <section class="panel" style="margin-top:16px">
+    <h2>Dispositivos / live</h2>
+    {% if not devices %}<p class="muted">Abrí Android Control Center con el backend en marcha para sincronizar la granja.</p>{% endif %}
+    {% for d in devices %}
+      {% set live = lives.get(d.serial) %}
+      <p>
+        <strong>{{ d.model or d.serial }}</strong>
+        <span class="muted">{{ d.serial }}</span>
+        {% if live %}<span class="badge live">LIVE {{ live.public_code }}</span>{% endif %}
+      </p>
+      {% if live %}<div class="urlbox">{{ live.capture_url }}</div>{% endif %}
+    {% endfor %}
+  </section>
+  </div>
+</div>
+{% endblock %}

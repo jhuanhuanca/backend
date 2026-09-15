@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Editar {{ product.name }} · {{ app_name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="/inventario">← Inventario</a></p>
+<h1>Ficha de {{ product.name }}</h1>
+<p class="muted">Estas características se muestran en la tienda al abrir el producto.</p>
+<section class="panel">
+  <form class="stack" method="post" action="/inventario/{{ product.id }}">
+    <div class="form-grid">
+      <label>SKU<input name="sku" value="{{ product.sku }}" required></label>
+      <label>Nombre<input name="name" value="{{ product.name }}" required></label>
+      <label>Precio<input name="price" value="{{ product.price }}" required></label>
+      <label>Stock<input name="stock" type="number" value="{{ product.stock }}"></label>
+      <label>Categoría<input name="category" value="{{ product.category }}" placeholder="Ropa, Accesorios…"></label>
+      <label>Marca<input name="brand" value="{{ product.brand }}"></label>
+      <label>Etiquetas<input name="tags" value="{{ product.tags }}" placeholder="algodón, live, básica"></label>
+      <label>Foto principal URL<input name="image_url" value="{{ product.image_url }}" placeholder="https://…"></label>
+    </div>
+    <label>Descripción
+      <textarea name="description" rows="4">{{ product.description }}</textarea>
+    </label>
+    <label>Especificaciones <span class="muted">(una por línea: Peso: 220 g)</span>
+      <textarea name="specs" rows="6" placeholder="Talla: M&#10;Color: Negro, Blanco&#10;Material: Algodón">{{ specs_text }}</textarea>
+    </label>
+    <label>Opciones para elegir <span class="muted">(Color: Negro, Blanco)</span>
+      <textarea name="options" rows="4" placeholder="Color: Negro, Blanco&#10;Talla: S, M, L">{{ options_text }}</textarea>
+    </label>
+    <label>Galería extra <span class="muted">(una URL por línea)</span>
+      <textarea name="gallery" rows="3" placeholder="https://…">{{ gallery_text }}</textarea>
+    </label>
+    <button class="btn primary" type="submit">Guardar ficha</button>
+  </form>
+</section>
+{% endblock %}

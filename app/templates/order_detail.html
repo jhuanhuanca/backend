@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ order.public_code }} · {{ app_name }}{% endblock %}
+{% block content %}
+<p class="muted"><a href="/pedidos">← Pedidos</a></p>
+<h1>{{ order.public_code }} <span class="badge {{ order.status }}">{{ order_status_label(order.status) }}</span></h1>
+<div class="grid-2">
+  <section class="panel">
+    <p><strong>Cliente:</strong> {{ order.customer.name }} · {{ order.customer.phone }}</p>
+    <p><strong>Canal:</strong> {{ order.channel }}
+      {% if order.session %} · live {{ order.session.public_code }}{% endif %}
+    </p>
+    <p><strong>Total:</strong> {{ order.total_amount }}</p>
+    <table>
+      <thead><tr><th>Producto</th><th>Cant.</th><th>P. unit.</th></tr></thead>
+      <tbody>
+      {% for item in order.items %}
+        <tr><td>{{ item.product_name }}</td><td>{{ item.quantity }}</td><td>{{ item.unit_price }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="order-actions">
+      {% if order.status == "pendiente_pago" %}
+      <form method="post" action="/pedidos/{{ order.id }}/confirmar-pago" style="display:inline">
+        <button class="btn ok" type="submit">Confirmar pago</button>
+      </form>
+      <form method="post" action="/pedidos/{{ order.id }}/cancelar" style="display:inline">
+        <button class="btn danger" type="submit">Cancelar</button>
+      </form>
+      {% endif %}
+      {% if order.status == "pagado" %}
+      <form method="post" action="/pedidos/{{ order.id }}/estado" style="display:inline">
+        <input type="hidden" name="status" value="listo_entrega">
+        <button class="btn" type="submit">Listo para entrega</button>
+      </form>
+      {% endif %}
+      {% if order.status in ["pagado", "listo_entrega"] %}
+      <form method="post" action="/pedidos/{{ order.id }}/estado" style="display:inline">
+        <input type="hidden" name="status" value="en_transito">
+        <button class="btn" type="submit">Marcar en camino</button>
+      </form>
+      {% endif %}
+      {% if order.status in ["pagado", "listo_entrega", "en_transito"] %}
+      <form method="post" action="/pedidos/{{ order.id }}/estado" style="display:inline">
+        <input type="hidden" name="status" value="entregado">
+        <button class="btn ok" type="submit">Marcar entregado</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+  <section class="panel">
+    <h2>Pago</h2>
+    {% for p in order.payments %}
+      <p class="muted">{{ p.method }} · {{ p.status }} · {{ p.amount }}</p>
+      {% if upload_url(p.qr_image_path) %}
+        <img class="qr" src="{{ upload_url(p.qr_image_path) }}" alt="QR">
+      {% endif %}
+      {% if p.qr_payload %}<pre class="urlbox">{{ p.qr_payload }}</pre>{% endif %}
+      {% if upload_url(p.proof_image_path) %}
+        <p>Comprobante:</p>
+        <img src="{{ upload_url(p.proof_image_path) }}" alt="Comprobante" style="max-width:100%">
+      {% endif %}
+    {% endfor %}
+  </section>
+</div>
+
+<section class="panel" style="margin-top:16px">
+  <h2>Entrega</h2>
+  {% if order.delivery %}
+    <p>
+      <span class="badge">{{ delivery_mode_label(order.delivery.mode) }}</span>
+      {% if order.delivery.status == "delivered" %}<span class="badge entregado">Entregada</span>{% endif %}
+    </p>
+    {% if order.delivery.window_label %}<p><strong>Horario / cuando:</strong> {{ order.delivery.window_label }}</p>{% endif %}
+    {% if order.delivery.address %}<p><strong>Dirección:</strong> {{ order.delivery.address }}</p>{% endif %}
+    {% if order.delivery.notes %}<p class="muted">{{ order.delivery.notes }}</p>{% endif %}
+    {% if order.delivery.delivered_at %}<p class="muted">Entregado: {{ order.delivery.delivered_at }}</p>{% endif %}
+  {% else %}
+    <p class="muted">Todavía no hay modalidad. Al confirmar el pago el bot le pregunta al cliente, o cargala acá.</p>
+  {% endif %}
+
+  {% if order.status not in ["cancelado", "entregado"] %}
+  <form method="post" action="/pedidos/{{ order.id }}/entrega" class="wa-form" style="margin-top:12px">
+    <label>Modalidad<br>
+      <select name="mode">
+        <option value="delivery" {% if order.delivery and order.delivery.mode in ["delivery", "scheduled"] %}selected{% endif %}>Envío a domicilio</option>
+        <option value="shipping" {% if order.delivery and order.delivery.mode == "shipping" %}selected{% endif %}>Envío a otra ciudad</option>
+        <option value="meeting" {% if order.delivery and order.delivery.mode == "meeting" %}selected{% endif %}>Reunión / encuentro</option>
+        <option value="to_coordinate" {% if not order.delivery or order.delivery.mode == "to_coordinate" %}selected{% endif %}>A coordinar</option>
+      </select>
+    </label>
+    <label>Ventana programada<br>
+      <select name="window_key">
+        <option value="">— elegir —</option>
+        {% for w in windows %}
+          <option value="{{ w.key }}">{{ w.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Día y hora (si es a coordinar)<br>
+      <input name="when_text" value="{{ order.delivery.window_label if order.delivery else '' }}" placeholder="sábado 18 hs">
+    </label>
+    <label>Dirección / zona<br>
+      <input name="address" value="{{ order.delivery.address if order.delivery else order.delivery_address }}" placeholder="Zona Sur, calle…">
+    </label>
+    <label class="wa-form-actions">Notas<br>
+      <textarea name="notes" rows="2">{{ order.delivery.notes if order.delivery else "" }}</textarea>
+    </label>
+    <div class="wa-form-actions">
+      <button class="btn primary" type="submit">Guardar entrega</button>
+    </div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

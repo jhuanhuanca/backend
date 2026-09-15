@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingresar · {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <main class="wrap login">
+    <div class="panel">
+      <h1>{{ app_name }}</h1>
+      <p class="muted">Dashboard Fase 1 — pedidos, stock y granja de móviles.</p>
+      {% if error %}<p class="badge cancelado">{{ error }}</p>{% endif %}
+      <form method="post">
+        <p><label>Usuario<br><input name="username" value="admin" autocomplete="username"></label></p>
+        <p><label>Contraseña<br><input name="password" type="password" autocomplete="current-password"></label></p>
+        <button class="btn primary" type="submit">Entrar</button>
+      </form>
+    </div>
+  </main>
+</body>
+</html>

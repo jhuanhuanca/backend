@@ -1,0 +1,155 @@
+{% set page_title = product.name ~ " · " ~ company.name %}
+{% include "_shop_top.html" %}
+
+<main class="pdp wrap">
+  <section class="pdp-gallery">
+    <div class="pdp-stage" id="pdp-stage">
+      <span class="price-ribbon">{{ product.price|money }} {{ currency }}</span>
+      {% if gallery %}
+        <img id="pdp-main" src="{{ gallery[0] }}" alt="{{ product.name }}">
+      {% else %}
+        <span class="thumb-fallback pdp-fallback">{{ product.name[:2] }}</span>
+      {% endif %}
+      {% if gallery %}
+      <button type="button" class="pdp-zoom" id="pdp-zoom" aria-label="Ampliar imagen">⤢</button>
+      {% endif %}
+    </div>
+    {% if gallery|length > 1 %}
+    <div class="pdp-thumbs" id="pdp-thumbs">
+      {% for url in gallery %}
+      <button type="button" class="pdp-thumb{% if loop.first %} is-on{% endif %}" data-src="{{ url }}">
+        <img src="{{ url }}" alt="">
+      </button>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="pdp-info">
+    <div class="pdp-crumbs">
+      <a href="/t/{{ company.slug }}">Inicio</a>
+      <span>›</span>
+      <a href="/t/{{ company.slug }}#catalogo">Productos</a>
+      <span>›</span>
+      <a href="/t/{{ company.slug }}#colecciones">{{ cat_label }}</a>
+      <span>›</span>
+      <span>{{ product.name }}</span>
+      <span class="pdp-nav">
+        {% if prev_p %}<a href="/t/{{ company.slug }}/p/{{ prev_p.sku }}" aria-label="Anterior">‹</a>{% endif %}
+        <a href="/t/{{ company.slug }}#catalogo" aria-label="Catálogo">▦</a>
+        {% if next_p %}<a href="/t/{{ company.slug }}/p/{{ next_p.sku }}" aria-label="Siguiente">›</a>{% endif %}
+      </span>
+    </div>
+
+    <h1>{{ product.name }}</h1>
+    <p class="pdp-sku">SKU {{ product.sku }}{% if product.brand %} · {{ product.brand }}{% endif %}</p>
+    <p class="pdp-lead">{{ product.description or "Producto del live. Pedilo por WhatsApp y coordinamos QR y entrega." }}</p>
+
+    {% if specs %}
+    <h2 class="pdp-h">Especificación:</h2>
+    <div class="spec-grid" id="spec-grid">
+      {% for row in specs[:5] %}
+      <div class="spec-box">
+        <small>{{ row.label }}</small>
+        <strong>{{ row.value }}</strong>
+      </div>
+      {% endfor %}
+      {% if specs|length > 5 %}
+      <button type="button" class="spec-box spec-more" id="spec-more">TODAS LAS ESPECIFICACIONES</button>
+      {% for row in specs[5:] %}
+      <div class="spec-box spec-extra" hidden>
+        <small>{{ row.label }}</small>
+        <strong>{{ row.value }}</strong>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if options %}
+    <div class="pdp-opts" id="pdp-opts">
+      {% for key, values in options.items() %}
+      <fieldset class="pdp-opt" data-opt="{{ key }}">
+        <legend>{{ key }}</legend>
+        <div class="pdp-opt-row{% if key|lower in ['color', 'colores'] %} is-swatch{% endif %}">
+          {% for val in values %}
+          <button
+            type="button"
+            class="opt-btn{% if loop.first %} is-on{% endif %}"
+            data-value="{{ val }}"
+            title="{{ val }}"
+            {% if key|lower in ['color', 'colores'] %}style="--swatch: {{ val|lower }}"{% endif %}
+          >{{ val }}</button>
+          {% endfor %}
+        </div>
+      </fieldset>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="pdp-buy">
+      <div class="qty" aria-label="Cantidad">
+        <button type="button" id="qty-minus">−</button>
+        <input id="pdp-qty" type="number" min="1" value="1" {% if stock < 1 %}disabled{% endif %}>
+        <button type="button" id="qty-plus">+</button>
+      </div>
+      <button
+        type="button"
+        class="pdp-add shop-add-pdp"
+        id="pdp-add"
+        {% if stock < 1 %}disabled{% endif %}
+        data-sku="{{ product.sku }}"
+        data-name="{{ product.name }}"
+        data-price="{{ product.price }}"
+      >Añadir a la cesta</button>
+    </div>
+    {% if wa_e164 %}
+    <a
+      class="pdp-wa"
+      href="https://wa.me/{{ wa_e164 }}?text={{ ('Hola, quiero consultar ' ~ product.name ~ ' (' ~ product.sku ~ ')')|urlencode }}"
+      target="_blank"
+      rel="noopener"
+    >Consulta sobre el producto o informa de un problema</a>
+    {% endif %}
+    <p class="pdp-stock">{% if stock > 0 %}{{ stock }} unidades en stock{% else %}Sin stock · consultá disponibilidad{% endif %}</p>
+  </section>
+</main>
+
+<section class="pdp-side wrap">
+  {% if wa_e164 %}
+  <a class="pdp-help" href="https://wa.me/{{ wa_e164 }}" target="_blank" rel="noopener">
+    <span class="pdp-help-ico">☎</span>
+    <span>
+      ¿Necesitás ayuda para elegir el producto adecuado?
+      <strong>Habla con nosotros al {{ wa_display or wa_e164 }}.</strong>
+    </span>
+  </a>
+  {% endif %}
+  <dl class="pdp-meta">
+    {% if product.brand %}
+    <div><dt>Marca</dt><dd>{{ product.brand }}</dd></div>
+    {% endif %}
+    <div><dt>SKU</dt><dd>{{ product.sku }}</dd></div>
+    <div>
+      <dt>Estado</dt>
+      <dd class="{% if stock > 0 %}ok{% endif %}">{% if stock > 0 %}{{ stock }} unidades en stock{% else %}Consultar{% endif %}</dd>
+    </div>
+    {% if tags %}
+    <div><dt>Etiquetas</dt><dd>{{ tags|join(", ") }}</dd></div>
+    {% endif %}
+    <div><dt>Categorías</dt><dd>{{ cat_label }}</dd></div>
+  </dl>
+  <ul class="pdp-trust">
+    <li>Envío a coordinar en Bolivia. Preguntá costo según ciudad.</li>
+    <li>Pagás con QR y confirmamos el pedido por WhatsApp.</li>
+    <li>Mismo stock del live: si se agota, te avisamos al instante.</li>
+  </ul>
+  <p class="pdp-pay"><span>Pagos seguros:</span> QR Bolivia · WhatsApp</p>
+</section>
+
+<div class="lightbox" id="lightbox" hidden>
+  <button type="button" id="lightbox-close" aria-label="Cerrar">×</button>
+  <img id="lightbox-img" alt="">
+</div>
+
+{% include "_shop_bottom.html" %}

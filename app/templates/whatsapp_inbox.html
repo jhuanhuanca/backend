@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block extra_wrap %} wrap-wide{% endblock %}
+{% block title %}WhatsApp · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>WhatsApp Hub</h1>
+  <p class="muted">Cada empresa pega acá sus credenciales de <strong>WhatsApp Cloud API</strong> (Meta). El token se cifra en la base y no se vuelve a mostrar entero. El .env queda solo como respaldo local.</p>
+  <p><a class="btn primary" href="/whatsapp/simulador">Probar el chatbot (simulador)</a></p>
+
+{% if flash_ok == "guardado" %}
+  <p class="badge pagado">Credenciales guardadas. Ya podés probar Graph API.</p>
+{% elif flash_ok == "empresa" %}
+  <p class="badge pagado">Empresa creada. Completá el número de WhatsApp de este vendedor.</p>
+{% endif %}
+{% if flash_error %}
+  <p class="badge cancelado">No se pudo guardar ({{ flash_error }}).</p>
+{% endif %}
+
+<section class="panel wa-conn">
+  <h2>Conexión Cloud API</h2>
+  <p>
+    {% if connection.configured %}
+      <span class="badge pagado">lista para enviar</span>
+    {% else %}
+      <span class="badge cancelado">faltan token y Phone Number ID</span>
+    {% endif %}
+    {% if connection.skip_signature %}
+      <span class="badge pendiente_pago">firma webhook omitida (dev)</span>
+    {% endif %}
+    {% if connection.source == "db" %}
+      <span class="badge">guardado en esta empresa</span>
+    {% else %}
+      <span class="badge">usando .env</span>
+    {% endif %}
+  </p>
+
+  {% if companies|length > 1 %}
+  <form method="post" action="/whatsapp/empresa" class="inline" style="margin-bottom:12px">
+    <label>Empresa activa<br>
+      <select name="company_id" onchange="this.form.submit()">
+        {% for c in companies %}
+          <option value="{{ c.id }}" {% if company and c.id == company.id %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Cambiar</button>
+  </form>
+  {% endif %}
+
+  <form method="post" action="/whatsapp/conexion" class="wa-form" autocomplete="off">
+    <label>Nombre de la empresa / tienda<br>
+      <input name="company_name" value="{{ company.name if company else '' }}" required placeholder="Ej. Tienda La Paz">
+    </label>
+    <label>Etiqueta del número<br>
+      <input name="label" value="{{ connection.label or 'Principal' }}" placeholder="Principal">
+    </label>
+    <label>Número de negocio (E.164, sin +)<br>
+      <input name="business_e164" value="{{ connection.business_e164 }}" placeholder="59170000000" required>
+    </label>
+    <label>Phone Number ID (Meta)<br>
+      <input name="phone_number_id" value="{{ connection.phone_number_id if connection.phone_number_id != '(vacío)' else '' }}" placeholder="123456789012345">
+    </label>
+    <label>WABA ID (opcional)<br>
+      <input name="waba_id" value="{{ connection.waba_id if connection.waba_id != '(vacío)' else '' }}" placeholder="ID de la cuenta WhatsApp Business">
+    </label>
+    <label>Graph version<br>
+      <input name="graph_version" value="{{ connection.graph_version }}" placeholder="v21.0">
+    </label>
+    <label>Access Token{% if connection.has_token %} <span class="muted">actual: {{ connection.token_preview }}</span>{% endif %}<br>
+      <input name="access_token" type="password" placeholder="{% if connection.has_token %}Dejá vacío para no cambiar{% else %}EAAB… token permanente o de sistema{% endif %}" autocomplete="new-password">
+    </label>
+    <label>App Secret{% if connection.has_app_secret %} <span class="muted">actual: {{ connection.app_secret_preview }}</span>{% endif %}<br>
+      <input name="app_secret" type="password" placeholder="{% if connection.has_app_secret %}Dejá vacío para no cambiar{% else %}Secret de la app de Meta{% endif %}" autocomplete="new-password">
+    </label>
+    <label>Verify Token del webhook{% if connection.has_verify_token %} <span class="muted">cargado</span>{% endif %}<br>
+      <input name="verify_token" type="password" placeholder="{% if connection.has_verify_token %}Dejá vacío para no cambiar{% else %}El mismo que pongas en Meta{% endif %}" autocomplete="new-password">
+    </label>
+    <label class="wa-check">
+      <input type="checkbox" name="skip_signature" {% if connection.skip_signature %}checked{% endif %}>
+      Omitir firma del webhook (solo desarrollo local)
+    </label>
+    <div class="wa-form-actions">
+      <button class="btn primary" type="submit">Guardar credenciales</button>
+    </div>
+  </form>
+
+  <p class="muted">Webhook para Meta (HTTPS en producción):</p>
+  <p class="code urlbox">{{ connection.webhook_url }}</p>
+  {% if last_inbound %}<p class="muted">Último mensaje en bandeja: {{ last_inbound }}</p>{% endif %}
+
+  <form method="post" action="/whatsapp/probar" style="margin-top:8px">
+    <button class="btn" type="submit">Probar conexión Graph API</button>
+  </form>
+  {% if probe %}
+    {% if probe.ok %}
+      <p class="badge pagado">Graph OK
+        {% if probe.graph %}
+          · {{ probe.graph.get("verified_name", "") }}
+          {{ probe.graph.get("display_phone_number", "") }}
+        {% endif %}
+      </p>
+    {% else %}
+      <p class="badge cancelado">{{ probe.reason }}</p>
+    {% endif %}
+  {% endif %}
+
+  <form method="post" action="/whatsapp/empresa/nueva" class="inline" style="margin-top:16px">
+    <label>Otra empresa (SaaS)<br>
+      <input name="name" placeholder="Nombre del vendedor / tienda" required>
+    </label>
+    <button class="btn" type="submit">Agregar empresa</button>
+  </form>
+  <p class="muted">Cada empresa tiene su propio token. El login separado por vendedor viene después; hoy el admin elige la empresa activa.</p>
+</section>
+
+<div class="wa-layout">
+  <aside class="wa-list">
+    <h2>Chats</h2>
+    {% for c in conversations %}
+      <a class="wa-item {% if active == c.phone %}on{% endif %}" href="/whatsapp/chat/{{ c.phone }}">
+        <strong>{{ c.name or c.phone }}</strong>
+        {% if c.unread_count %}<span class="badge live">{{ c.unread_count }}</span>{% endif %}
+        <div class="muted">{{ c.last_preview }}</div>
+      </a>
+    {% else %}
+      <p class="muted">Todavía no hay conversaciones. Llegan con el webhook o con el simulador <span class="code">POST /api/dev/whatsapp</span>.</p>
+    {% endfor %}
+  </aside>
+  <section class="wa-thread">
+    {% if active %}
+      <header class="wa-head">{{ active }}</header>
+      <div class="wa-msgs">
+        {% for m in messages %}
+          <div class="wa-bubble {{ m.direction }} {{ m.source }}">
+            <div class="wa-meta">{{ m.source }} · {{ m.created_at }}</div>
+            {% if m.msg_type == "image" and upload_url(m.media_path) %}
+              <img src="{{ upload_url(m.media_path) }}" alt="">
+            {% elif m.msg_type == "audio" and upload_url(m.media_path) %}
+              <audio controls preload="metadata" src="{{ upload_url(m.media_path) }}"></audio>
+            {% elif m.msg_type == "video" and upload_url(m.media_path) %}
+              <video controls preload="metadata" src="{{ upload_url(m.media_path) }}"></video>
+            {% elif m.msg_type == "document" and upload_url(m.media_path) %}
+              <a href="{{ upload_url(m.media_path) }}" target="_blank" rel="noopener">Descargar archivo</a>
+            {% endif %}
+            {% if m.body %}<div class="wa-text">{{ m.body }}</div>{% endif %}
+            {% if m.msg_type != "text" and not upload_url(m.media_path) and not m.body %}
+              <div class="muted">({{ m.msg_type }} sin archivo local — configurá Cloud API para descargar media)</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+      <form class="wa-compose" id="wa-compose" method="post" action="/whatsapp/chat/{{ active }}" enctype="multipart/form-data">
+        <input type="file" id="wa-file" name="media" accept="image/*,video/*,audio/*,.pdf,.ogg,.mp3,.m4a,.mp4,.webm" hidden>
+        <input type="hidden" id="wa-voice" name="voice" value="">
+        <button class="btn wa-icon" type="button" id="wa-attach" title="Adjuntar foto, video o audio">📎</button>
+        <button class="btn wa-icon" type="button" id="wa-mic" title="Grabar audio">🎤</button>
+        <input name="body" id="wa-text" placeholder="Escribí un mensaje o adjuntá foto, video o audio…" autocomplete="off">
+        <button class="btn ok" type="submit">Enviar</button>
+      </form>
+      <p class="muted wa-compose-hint" id="wa-hint"></p>
+      {% if flash_error == "vacio" %}
+        <p class="badge cancelado">Escribí un texto o adjuntá un archivo.</p>
+      {% elif flash_error %}
+        <p class="badge cancelado">{{ flash_error }}</p>
+      {% endif %}
+    {% else %}
+      <p class="muted wa-empty">Elegí un chat a la izquierda. El bot sigue respondiendo; acá ves el hilo y podés escribir vos.</p>
+    {% endif %}
+  </section>
+</div>
+<script src="/static/whatsapp_inbox.js?v=1"></script>
+{% endblock %}

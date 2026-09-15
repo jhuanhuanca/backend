@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title or company.name }}</title>
+  <meta name="theme-color" content="#284980">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/shop.css">
+</head>
+<body
+  data-slug="{{ company.slug }}"
+  data-wa="{{ wa_e164 }}"
+  data-currency="{{ currency }}"
+  data-store="{{ company.name }}"
+  data-home="/t/{{ company.slug }}"
+>
+  <header class="site-head">
+    <div class="bar-top">
+      <div class="wrap bar-top-in">
+        <div class="bar-left">
+          <span>Español</span>
+          <span class="sep"></span>
+          <span>{{ currency }}</span>
+          <span class="sep"></span>
+          <a href="/t/{{ company.slug }}#ayuda">Preguntas frecuentes</a>
+        </div>
+        <div class="bar-right">
+          <span class="social" aria-hidden="true">
+            <i class="i-fb"></i><i class="i-x"></i><i class="i-ig"></i>
+          </span>
+          {% if wa_e164 %}
+          <a class="login-link" href="https://wa.me/{{ wa_e164 }}" target="_blank" rel="noopener">
+            <i class="i-user"></i> Pedí por WhatsApp
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="bar-brand">
+      <div class="wrap bar-brand-in">
+        <a class="logo" href="/t/{{ company.slug }}">
+          <span class="logo-mark" aria-hidden="true">{{ company.name[:1] }}</span>
+          <span>
+            <strong>{{ company.name }}</strong>
+            <small>{{ company.store_tagline or "Tienda del live · envíos en Bolivia" }}</small>
+          </span>
+        </a>
+        <form class="search" id="search-form" role="search" action="/t/{{ company.slug }}">
+          <input id="search-q" type="search" placeholder="Buscar productos, SKU o categoría…" autocomplete="off">
+          <div class="search-cat" id="search-cat">
+            <button type="button" id="cat-toggle">Todas <span>▾</span></button>
+            <ul id="cat-menu" hidden>
+              <li data-cat="">Todas las categorías</li>
+              {% for cat in categories %}
+              <li data-cat="{{ cat }}">{{ cat }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <button class="search-go" type="submit" aria-label="Buscar">⌕</button>
+        </form>
+        <div class="brand-tools">
+          {% if wa_display %}
+          <a class="support" href="https://wa.me/{{ wa_e164 }}" target="_blank" rel="noopener">
+            <span>Centro de soporte</span>
+            <strong>{{ wa_display }}</strong>
+          </a>
+          {% endif %}
+          <button type="button" class="icon-btn" id="cart-open" aria-label="Carrito">
+            <i class="i-bag"></i>
+            <em id="cart-count">0</em>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <nav class="bar-nav">
+      <div class="wrap bar-nav-in">
+        <button type="button" class="browse" id="mega-open">
+          ☰ Explorar colecciones
+        </button>
+        <a href="/t/{{ company.slug }}#catalogo">Nuevos productos</a>
+        {% if categories %}
+        <a href="/t/{{ company.slug }}#colecciones">Colecciones <span class="badge new">NUEVO</span></a>
+        {% endif %}
+        <a href="/t/{{ company.slug }}#catalogo" class="hot">Ofertas del live <span class="badge hot">HOT</span></a>
+        <a href="/t/{{ company.slug }}#ayuda">Ayuda</a>
+        {% if wa_e164 %}
+        <a class="track" href="https://wa.me/{{ wa_e164 }}?text={{ 'Hola, quiero consultar el estado de mi pedido'|urlencode }}" target="_blank" rel="noopener">Seguimiento de pedidos</a>
+        {% endif %}
+      </div>
+      <div class="mega" id="mega" hidden>
+        <div class="wrap mega-in">
+          {% for cat in categories %}
+          <div class="mega-col">
+            <h3>{{ cat }}</h3>
+            <ul>
+              {% for p in products if (p.category or 'Catálogo') == cat %}
+              <li><a href="/t/{{ company.slug }}/p/{{ p.sku }}">{{ p.name }}</a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% else %}
+          <p>Todavía no hay colecciones. Agregá productos en Inventario.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </nav>
+  </header>

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Tienda · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Tienda virtual</h1>
+<p class="muted">Cada empresa tiene un escaparate público con el look de tienda grande (header azul, ribbon de precio, colecciones). El cliente arma el carrito y termina el pedido por WhatsApp.</p>
+
+{% if company %}
+<section class="panel">
+  <p><strong>Empresa:</strong> {{ company.name }}</p>
+  <p>Enlace público:</p>
+  <p class="code urlbox">{{ store_url }}</p>
+  <p><a class="btn primary" href="{{ store_url }}" target="_blank" rel="noopener">Ver tienda</a></p>
+  <form method="post" action="/tienda" style="margin-top:16px">
+    <label>Frase de la tienda<br>
+      <input name="store_tagline" value="{{ company.store_tagline }}" placeholder="Ropa del live, envíos en La Paz">
+    </label>
+    <label class="wa-check" style="margin:12px 0;display:flex;gap:8px;align-items:center">
+      <input type="checkbox" name="store_enabled" {% if company.store_enabled %}checked{% endif %} style="width:auto">
+      Tienda visible al público
+    </label>
+    <button class="btn ok" type="submit">Guardar</button>
+  </form>
+</section>
+<p class="muted">Los productos salen del inventario de esta empresa. Pegá el enlace en TikTok, Instagram o la bio.</p>
+{% else %}
+<p class="muted">Creá una empresa en WhatsApp Hub primero.</p>
+{% endif %}
+{% endblock %}

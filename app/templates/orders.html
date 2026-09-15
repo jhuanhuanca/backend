@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Pedidos · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Pedidos</h1>
+<p class="filters">
+  <a class="btn {% if not estado %}primary{% endif %}" href="/pedidos">Todos</a>
+  <a class="btn {% if estado == 'pendiente_pago' %}primary{% endif %}" href="/pedidos?estado=pendiente_pago">Pendiente pago</a>
+  <a class="btn {% if estado == 'pagado' %}primary{% endif %}" href="/pedidos?estado=pagado">Pagados</a>
+  <a class="btn {% if estado == 'listo_entrega' %}primary{% endif %}" href="/pedidos?estado=listo_entrega">Listos</a>
+  <a class="btn {% if estado == 'en_transito' %}primary{% endif %}" href="/pedidos?estado=en_transito">En camino</a>
+  <a class="btn {% if estado == 'entregado' %}primary{% endif %}" href="/pedidos?estado=entregado">Entregados</a>
+</p>
+<table>
+  <thead>
+    <tr>
+      <th>Código</th>
+      <th>Cliente</th>
+      <th>Live</th>
+      <th>Total</th>
+      <th>Estado</th>
+      <th>Entrega</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for o in orders %}
+    <tr>
+      <td><a href="/pedidos/{{ o.id }}">{{ o.public_code }}</a></td>
+      <td>{{ o.customer.phone if o.customer else "" }}<br><span class="muted">{{ o.customer.name if o.customer else "" }}</span></td>
+      <td>{{ o.session.public_code if o.session else "—" }}</td>
+      <td>{{ o.total_amount }}</td>
+      <td><span class="badge {{ o.status }}">{{ order_status_label(o.status) }}</span></td>
+      <td>{{ delivery_summary(o) }}</td>
+      <td>
+        {% if o.status == "pendiente_pago" %}
+          <form method="post" action="/pedidos/{{ o.id }}/confirmar-pago" style="display:inline">
+            <button class="btn ok" type="submit">Confirmar pago</button>
+          </form>
+        {% elif o.status in ["pagado", "listo_entrega"] %}
+          <form method="post" action="/pedidos/{{ o.id }}/estado" style="display:inline">
+            <input type="hidden" name="status" value="en_transito">
+            <button class="btn" type="submit">En camino</button>
+          </form>
+        {% endif %}
+        {% if o.status in ["pagado", "listo_entrega", "en_transito"] %}
+          <form method="post" action="/pedidos/{{ o.id }}/estado" style="display:inline">
+            <input type="hidden" name="status" value="entregado">
+            <button class="btn ok" type="submit">Entregado</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">Sin pedidos</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

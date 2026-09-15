@@ -1,0 +1,167 @@
+from __future__ import annotations
+
+from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models import Customer, Order, OrderItem, Payment, Product, utcnow
+from app.services import inventory as inventory
+from app.services.codes import next_order_code
+from app.services.payments import prepare_payment_assets
+
+
+class OrderError(ValueError):
+    pass
+
+
+async def get_or_create_customer(
+    db: AsyncSession, phone: str, name: str = ""
+) -> Customer:
+    phone = phone.lstrip("+")
+    row = await db.scalar(select(Customer).where(Customer.phone == phone))
+    if row:
+        if name and not row.name:
+            row.name = name
+        return row
+    row = Customer(phone=phone, name=name or phone)
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def create_whatsapp_order(
+    db: AsyncSession,
+    *,
+    phone: str,
+    name: str,
+    product: Product,
+    quantity: int,
+    session_id: str | None,
+    pay_amount: Decimal | None = None,
+    shipping_fee: Decimal = Decimal("0"),
+    notes: str = "",
+    delivery_type: str = "to_coordinate",
+    delivery_address: str = "",
+) -> Order:
+    customer = await get_or_create_customer(db, phone, name)
+    unit = Decimal(product.price)
+    product_total = unit * quantity
+    shipping_fee = Decimal(str(shipping_fee or 0))
+    total = product_total + shipping_fee
+    charge = pay_amount if pay_amount is not None else total
+    charge = Decimal(str(charge)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    free = await inventory.available_stock(db, product.id)
+    if free < quantity:
+        raise inventory.StockError(f"Stock insuficiente (disponible: {free})")
+    order = Order(
+        public_code=await next_order_code(db),
+        customer_id=customer.id,
+        session_id=session_id,
+        channel="whatsapp",
+        status="pendiente_pago",
+        total_amount=total,
+        delivery_type=delivery_type or "to_coordinate",
+        delivery_address=delivery_address or "",
+        notes=notes or "",
+    )
+    db.add(order)
+    await db.flush()
+    order.customer = customer
+    db.add(
+        OrderItem(
+            order_id=order.id,
+            product_id=product.id,
+            quantity=quantity,
+            unit_price=unit,
+            product_name=product.name,
+        )
+    )
+    await inventory.reserve(
+        db, product_id=product.id, quantity=quantity, order_id=order.id
+    )
+    from app.services import whatsapp as wa_svc
+
+    company = await wa_svc.get_company(db)
+    payload, qr_path, method = prepare_payment_assets(order.public_code, charge, company)
+    payment = Payment(
+        order_id=order.id,
+        amount=charge,
+        method=method,
+        status="pending",
+        qr_payload=payload,
+        qr_image_path=str(qr_path) if qr_path else "",
+    )
+    db.add(payment)
+    await db.flush()
+    loaded = await load_order(db, order.id)
+    assert loaded is not None
+    return loaded
+
+
+async def load_order(db: AsyncSession, order_id: str) -> Order | None:
+    return await db.scalar(
+        select(Order)
+        .where(Order.id == order_id)
+        .options(
+            selectinload(Order.items),
+            selectinload(Order.payments),
+            selectinload(Order.customer),
+            selectinload(Order.session),
+            selectinload(Order.delivery),
+        )
+    )
+
+
+async def attach_proof(db: AsyncSession, order: Order, proof_path: Path) -> Payment:
+    payment = order.payments[-1] if order.payments else None
+    if not payment:
+        payment = Payment(order_id=order.id, amount=order.total_amount, status="proof_received")
+        db.add(payment)
+    payment.proof_image_path = str(proof_path)
+    payment.status = "proof_received"
+    order.status = "pendiente_pago"
+    order.updated_at = utcnow()
+    await db.flush()
+    return payment
+
+
+async def confirm_payment(db: AsyncSession, order: Order, confirmed_by: str = "seller") -> Order:
+    if order.status == "cancelado":
+        raise OrderError("El pedido está cancelado")
+    await inventory.consume_reservations(db, order.id)
+    for payment in order.payments:
+        payment.status = "confirmed"
+        payment.confirmed_by = confirmed_by
+    order.status = "pagado"
+    order.updated_at = utcnow()
+    await db.flush()
+    return order
+
+
+async def cancel_order(db: AsyncSession, order: Order) -> Order:
+    if order.status in {"pagado", "entregado"}:
+        raise OrderError("No se puede cancelar un pedido ya pagado o entregado")
+    await inventory.release_reservations(db, order.id)
+    order.status = "cancelado"
+    order.updated_at = utcnow()
+    for payment in order.payments:
+        if payment.status != "confirmed":
+            payment.status = "rejected"
+    await db.flush()
+    return order
+
+
+async def latest_open_order(db: AsyncSession, customer_id: str) -> Order | None:
+    return await db.scalar(
+        select(Order)
+        .where(
+            Order.customer_id == customer_id,
+            Order.status == "pendiente_pago",
+        )
+        .options(selectinload(Order.payments), selectinload(Order.items))
+        .order_by(Order.created_at.desc())
+    )

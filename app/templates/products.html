@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Inventario · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Inventario</h1>
+{% if store_url %}
+<p class="muted">Tienda pública: <a href="{{ store_url }}" target="_blank" rel="noopener">{{ store_url }}</a></p>
+{% endif %}
+<section class="panel">
+  <h2>Nuevo producto</h2>
+  <form class="stack" method="post" action="/inventario">
+    <div class="form-grid">
+      <label>SKU<input name="sku" required></label>
+      <label>Nombre<input name="name" required></label>
+      <label>Precio<input name="price" value="50.00" required></label>
+      <label>Stock<input name="stock" type="number" value="10"></label>
+      <label>Categoría<input name="category" placeholder="Ropa, Accesorios…"></label>
+      <label>Marca<input name="brand"></label>
+      <label>Etiquetas<input name="tags" placeholder="algodón, live"></label>
+      <label>Foto URL<input name="image_url" placeholder="https://…"></label>
+    </div>
+    <label>Descripción
+      <textarea name="description" rows="3" placeholder="Texto que se ve en la ficha del producto"></textarea>
+    </label>
+    <label>Especificaciones <span class="muted">(una por línea: Peso: 220 g)</span>
+      <textarea name="specs" rows="4" placeholder="Talla: M&#10;Color: Negro&#10;Material: Algodón"></textarea>
+    </label>
+    <label>Opciones para elegir <span class="muted">(Color: Negro, Blanco)</span>
+      <textarea name="options" rows="3" placeholder="Color: Negro, Blanco&#10;Talla: S, M, L"></textarea>
+    </label>
+    <label>Galería extra <span class="muted">(una URL por línea)</span>
+      <textarea name="gallery" rows="2" placeholder="https://…"></textarea>
+    </label>
+    <button class="btn primary" type="submit">Agregar</button>
+  </form>
+</section>
+<table style="margin-top:16px">
+  <thead><tr><th>SKU</th><th>Nombre</th><th>Categoría</th><th>Precio</th><th>Stock físico</th><th>Disponible</th><th></th></tr></thead>
+  <tbody>
+  {% for p in products %}
+    <tr>
+      <td class="code">{{ p.sku }}</td>
+      <td>{{ p.name }}</td>
+      <td>{{ p.category or "—" }}</td>
+      <td>{{ p.price }}</td>
+      <td>{{ p.stock }}</td>
+      <td>{{ stocks.get(p.id, p.stock) }}</td>
+      <td>
+        <div class="row-actions">
+          <a class="btn" href="/inventario/{{ p.id }}">Ficha</a>
+          <form class="inline" method="post" action="/inventario/{{ p.id }}/stock">
+            <input name="stock" type="number" value="{{ p.stock }}" style="max-width:90px">
+            <button class="btn" type="submit">Ajustar</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

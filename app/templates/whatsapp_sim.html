@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block extra_wrap %} wrap-wide sim-page{% endblock %}
+{% block title %}Simulador WhatsApp · {{ app_name }}{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/static/whatsapp_sim.css">
+<p class="sim-kicker">Así se ve el chat en el celular del cliente</p>
+<h1>Vista de WhatsApp</h1>
+<p class="muted sim-lead">Escribís vos (burbuja verde, a la derecha). El bot contesta como lo haría en WhatsApp real (burbuja blanca, a la izquierda). No se envía a un teléfono.</p>
+
+<div class="sim-layout">
+  <div class="sim-device">
+    <div class="sim-bezel">
+      <div class="sim-status">
+        <span id="sim-status-time">9:41</span>
+        <span class="sim-notch"></span>
+        <span>LTE · 100%</span>
+      </div>
+      <header class="sim-head">
+        <span class="sim-back" aria-hidden="true">‹</span>
+        <div class="sim-avatar">{{ (app_name[:1] or "T") }}</div>
+        <div class="sim-who">
+          <strong>{{ app_name }}</strong>
+          <small id="sim-presence">en línea</small>
+        </div>
+        <span class="sim-icons" aria-hidden="true">📹 📞 ⋮</span>
+      </header>
+      <div class="sim-msgs" id="sim-msgs" aria-live="polite"></div>
+      <div class="sim-chips" id="sim-chips">
+        <button type="button" data-chip="hola">hola</button>
+        <button type="button" data-chip="catálogo">catálogo</button>
+        <button type="button" data-chip="1">1 comprar</button>
+        <button type="button" data-chip="2">2 reunión</button>
+        <button type="button" data-chip="pedido">pedido</button>
+        <button type="button" data-chip="cancelar">cancelar</button>
+        <button type="button" id="sim-proof">📎 comprobante</button>
+      </div>
+      <form class="sim-compose" id="sim-form">
+        <input type="file" id="sim-file" accept="image/*,video/*,audio/*" hidden>
+        <button type="button" class="sim-icon" id="sim-attach" title="Foto, video o audio" aria-label="Adjuntar">📎</button>
+        <button type="button" class="sim-icon" id="sim-mic" title="Grabar audio" aria-label="Grabar">🎤</button>
+        <input id="sim-text" name="text" placeholder="Mensaje" autocomplete="off">
+        <button class="sim-send" type="submit" aria-label="Enviar">➤</button>
+      </form>
+    </div>
+  </div>
+
+  <aside class="panel sim-side">
+    <h2>Controles</h2>
+    <p class="muted" id="sim-engine">Motor: {{ boot.engine }}</p>
+    <label>Nombre del cliente
+      <input id="sim-name" value="{{ default_name }}">
+    </label>
+    <label>Teléfono de prueba
+      <input id="sim-phone-input" value="{{ boot.phone or default_phone }}">
+    </label>
+    <button class="btn" type="button" id="sim-reset">Reiniciar conversación</button>
+    <p class="muted">Escribí <span class="code">hola</span>, elegí 1 o 2, y tocá un producto. Para el pago usá el chip <strong>comprobante</strong> (simula enviar la foto). No se manda a un teléfono real.</p>
+    <p class="muted">Si un producto no tiene foto, cargá la URL en Inventario → Ficha.</p>
+    <p><a href="/whatsapp">Volver al Hub</a></p>
+  </aside>
+</div>
+<script id="sim-boot" type="application/json">{{ boot|tojson }}</script>
+<script src="/static/whatsapp_sim.js?v=3"></script>
+{% endblock %}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  {% if user %}
+  <header class="app">
+    <div class="brand">{{ app_name }}</div>
+    <nav>
+      <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Inicio</a>
+      <a href="/pedidos" class="{% if request.url.path.startswith('/pedidos') %}active{% endif %}">Pedidos</a>
+      <a href="/agenda" class="{% if request.url.path.startswith('/agenda') %}active{% endif %}">Agenda</a>
+      <a href="/cobros" class="{% if request.url.path.startswith('/cobros') %}active{% endif %}">Cobros</a>
+      <a href="/inventario" class="{% if request.url.path.startswith('/inventario') %}active{% endif %}">Inventario</a>
+      <a href="/whatsapp" class="{% if request.url.path.startswith('/whatsapp') and not request.url.path.startswith('/whatsapp/simulador') %}active{% endif %}">WhatsApp</a>
+      <a href="/whatsapp/simulador" class="{% if request.url.path.startswith('/whatsapp/simulador') %}active{% endif %}">Simulador</a>
+      <a href="/flujos" class="{% if request.url.path.startswith('/flujos') %}active{% endif %}">Flujos</a>
+      <a href="/tienda" class="{% if request.url.path.startswith('/tienda') %}active{% endif %}">Tienda</a>
+      <a href="/dispositivos" class="{% if request.url.path.startswith('/dispositivos') %}active{% endif %}">Granja</a>
+    </nav>
+    <form action="/logout" method="post"><button class="btn" type="submit">Salir</button></form>
+  </header>
+  {% endif %}
+  <main class="wrap{% block extra_wrap %}{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,70 @@
+{% include "_shop_top.html" %}
+
+  {% if categories %}
+  <section class="cats wrap" id="colecciones">
+    {% for cat in categories %}
+    <button type="button" class="cat-card tone-{{ category_tones[loop.index0 % 6] }}" data-filter="{{ cat }}">
+      <span class="cat-orb">{{ cat[:2] }}</span>
+      <strong>{{ cat }}</strong>
+      <small>Ver colección</small>
+    </button>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="hero wrap" id="catalogo">
+    <h1>Más vendidos</h1>
+    <p>{{ company.store_tagline or "Explorá el catálogo del live. El pedido se confirma por WhatsApp, con QR y entrega." }}</p>
+  </section>
+
+  <main class="grid wrap" id="grid">
+    {% for p in products %}
+      {% set free = stocks.get(p.id, p.stock) %}
+      {% set cat = p.category or "Catálogo" %}
+      <article
+        class="card"
+        id="p-{{ p.id }}"
+        data-name="{{ p.name }} {{ p.sku }} {{ cat }} {{ p.description }}"
+        data-cat="{{ cat }}"
+      >
+        <div class="thumb">
+          <a class="thumb-link" href="/t/{{ company.slug }}/p/{{ p.sku }}">
+            <span class="price-ribbon">{{ p.price|money }} {{ currency }}</span>
+            {% if p.image_url %}
+              <img src="{{ p.image_url }}" alt="{{ p.name }}">
+            {% else %}
+              <span class="thumb-fallback">{{ p.name[:2] }}</span>
+            {% endif %}
+          </a>
+          <button
+            type="button"
+            class="shop-add"
+            {% if free < 1 %}disabled{% endif %}
+            data-sku="{{ p.sku }}"
+            data-name="{{ p.name }}"
+            data-price="{{ p.price }}"
+          >Agregar al carrito</button>
+        </div>
+        <a class="card-body" href="/t/{{ company.slug }}/p/{{ p.sku }}">
+          <h2>{{ p.name }}</h2>
+          <span class="pill">{{ cat }}</span>
+          <p class="desc">{{ p.description or p.sku }}</p>
+          <p class="stock">{% if free > 0 %}Stock {{ free }}{% else %}Sin stock{% endif %}</p>
+        </a>
+      </article>
+    {% else %}
+      <p class="empty">Esta tienda todavía no publicó productos.</p>
+    {% endfor %}
+  </main>
+  <p class="empty" id="no-results" hidden>No hay productos con esa búsqueda.</p>
+
+  <section class="foot-cats wrap" id="mas-colecciones">
+    {% for cat in categories %}
+    <button type="button" class="foot-cat tone-{{ category_tones[loop.index0 % 6] }}" data-filter="{{ cat }}">
+      <span>{{ cat[:1] }}</span>
+      {{ cat }}
+    </button>
+    {% endfor %}
+  </section>
+
+{% include "_shop_bottom.html" %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Granja · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Granja de móviles</h1>
+<p class="muted">Los dispositivos aparecen cuando Android Control Center sincroniza contra este backend (pestaña Live / Ventas).</p>
+<section class="panel">
+  <h2>Dispositivos</h2>
+  <table>
+    <thead><tr><th>Serial</th><th>Modelo</th><th>Estado</th><th>TikTok</th><th>Live</th></tr></thead>
+    <tbody>
+    {% for d in devices %}
+      {% set live = lives.get(d.serial) %}
+      <tr>
+        <td class="code">{{ d.serial }}</td>
+        <td>{{ d.model }}</td>
+        <td>{{ d.state }}{% if d.scrcpy_active %} · scrcpy{% endif %}</td>
+        <td>{{ d.tiktok_username or "—" }}</td>
+        <td>
+          {% if live %}
+            <span class="badge live">{{ live.public_code }}</span>
+            <div class="urlbox">{{ live.capture_url }}</div>
+          {% else %}—
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="5" class="muted">Ningún dispositivo sincronizado todavía</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+<section class="panel" style="margin-top:16px">
+  <h2>Sesiones live</h2>
+  <table>
+    <thead><tr><th>Código</th><th>Cuenta</th><th>Dispositivo</th><th>Estado</th><th>Inicio</th></tr></thead>
+    <tbody>
+    {% for s in sessions %}
+      <tr>
+        <td class="code">{{ s.public_code }}</td>
+        <td>{{ s.tiktok_username or "—" }}</td>
+        <td>{{ s.device_serial or "—" }}</td>
+        <td><span class="badge {{ 'live' if s.status == 'live' else s.status }}">{{ s.status }}</span></td>
+        <td>{{ s.started_at }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

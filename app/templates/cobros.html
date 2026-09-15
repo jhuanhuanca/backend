@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Cobros · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Cobros</h1>
+<p class="muted">Acá cargás el QR de tu banco (Simple QR) y los datos de transferencia. El bot los manda al cliente cuando cobra un adelanto o el pedido.</p>
+
+{% if not company %}
+<p class="muted">Creá una empresa en WhatsApp Hub primero.</p>
+{% else %}
+  {% if ok == "cuenta" %}
+  <p class="badge pagado">Cuenta bancaria guardada.</p>
+  {% elif ok == "qr" %}
+  <p class="badge pagado">QR de cobro actualizado.</p>
+  {% elif ok %}
+  <p class="badge pagado">Datos de cobro guardados.</p>
+  {% endif %}
+  {% if error %}
+  <p class="badge cancelado">{{ error }}</p>
+  {% endif %}
+  <p class="muted">Empresa: <strong>{{ company.name }}</strong></p>
+
+<div class="grid-2">
+  <section class="panel">
+    <h2>QR de cobro</h2>
+    <p class="muted">Subí la imagen del QR que te da tu app bancaria (BNB, Unión, Mercantil, Banco Sol, etc.).</p>
+    {% if company.pay_qr_path and upload_url(company.pay_qr_path) %}
+      <p><img class="qr" src="{{ upload_url(company.pay_qr_path) }}" alt="QR de cobro"></p>
+      <form method="post" action="/cobros/qr/borrar" style="margin-bottom:12px">
+        <button class="btn danger" type="submit">Quitar QR</button>
+      </form>
+    {% else %}
+      <p class="muted">Todavía no hay QR. Hasta que subas uno, el bot arma un código de prueba que <strong>no cobra en el banco</strong>.</p>
+    {% endif %}
+    <form method="post" action="/cobros/qr" enctype="multipart/form-data">
+      <label>Imagen del QR<br>
+        <input type="file" name="qr_file" accept="image/png,image/jpeg,image/webp" required>
+      </label>
+      <p style="margin-top:12px"><button class="btn primary" type="submit">Subir QR</button></p>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Cuenta para transferencia</h2>
+    <p class="muted">Si el cliente no puede escanear, le llegan estos datos por WhatsApp junto con el monto y la referencia del pedido.</p>
+    <form method="post" action="/cobros" class="stack">
+      <label>Banco
+        <input name="bank_name" value="{{ company.bank_name or '' }}" placeholder="Banco Unión, BNB, Banco Sol…">
+      </label>
+      <label>Titular de la cuenta
+        <input name="bank_holder" value="{{ company.bank_holder or '' }}" placeholder="Nombre como figura en el banco">
+      </label>
+      <label>Tipo de cuenta
+        <select name="bank_account_type">
+          <option value="">Elegir…</option>
+          {% for t in account_types %}
+          <option value="{{ t }}" {% if company.bank_account_type == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Número de cuenta
+        <input name="bank_account_number" value="{{ company.bank_account_number or '' }}" placeholder="Solo números">
+      </label>
+      <label>CI / NIT
+        <input name="bank_id_doc" value="{{ company.bank_id_doc or '' }}" placeholder="Opcional, para transferencias">
+      </label>
+      <label>Nota para el cliente
+        <textarea name="pay_instructions" rows="3" placeholder="Ej: Pagá el adelanto y el envío. El saldo se cancela en la entrega.">{{ company.pay_instructions or '' }}</textarea>
+      </label>
+      <button class="btn ok" type="submit">Guardar cuenta</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+{% endblock %}
