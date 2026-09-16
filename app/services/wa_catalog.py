@@ -9,6 +9,7 @@ from pathlib import Path
 from app.config import UPLOADS_DIR, get_settings
 from app.models import Product
 from app.services import inbox, inventory, whatsapp
+from app.services.whatsapp import CloudError
 
 settings = get_settings()
 
@@ -88,14 +89,27 @@ def _local_upload_path(url: str) -> Path | None:
 
 async def _send_catalog_image(db: AsyncSession, phone: str, url: str, caption: str) -> None:
     link = (url or "").strip()
-    if link.startswith("https://"):
-        await whatsapp.send_image_link(phone, link, caption, db=db)
+    try:
+        if link.startswith("https://"):
+            await whatsapp.send_image_link(phone, link, caption, db=db)
+            return
+        local = _local_upload_path(link)
+        if not local:
+            return
+        sent = await whatsapp.send_image(phone, local, caption, db=db)
+        await inbox.record_bot_image(db, phone, local, caption, sent)
+    except CloudError:
         return
-    local = _local_upload_path(link)
-    if not local:
-        return
-    sent = await whatsapp.send_image(phone, local, caption, db=db)
-    await inbox.record_bot_image(db, phone, local, caption, sent)
+
+
+def _catalog_text(header: str, items: list[dict]) -> str:
+    lines = [header.strip() or "Este es el catálogo."]
+    for item in items:
+        lines.append(
+            f"{item['n']}. {item['name']} — {item['price']} {item['currency']} (stock {item['stock']})"
+        )
+    lines.append("Escribí el número o el nombre del producto.")
+    return "\n".join(lines)
 
 
 def _truthy(value, default: bool = True) -> bool:
@@ -163,27 +177,30 @@ async def present_catalog(
         }
         for item in items[:10]
     ]
-    await whatsapp.send_interactive_list(
-        phone,
-        body=payload["text"],
-        button=button,
-        rows=rows,
-        header="Catálogo",
-        db=db,
-    )
+    catalog_text = _catalog_text(payload["text"], items)
+    try:
+        await whatsapp.send_interactive_list(
+            phone,
+            body=payload["text"],
+            button=button,
+            rows=rows,
+            header="Catálogo",
+            db=db,
+        )
+    except CloudError:
+        pass
     shown = 0
-    if whatsapp.cloud_skipped():
-        return []
-    for item in items:
-        if shown >= image_count:
-            break
-        image = item["image"]
-        if not (image.startswith("https://") or _local_upload_path(image)):
-            continue
-        caption = f"{item['n']}. {item['name']} — {item['price']} {item['currency']}"
-        await _send_catalog_image(db, phone, image, caption)
-        shown += 1
-    return []
+    if not whatsapp.cloud_skipped():
+        for item in items:
+            if shown >= image_count:
+                break
+            image = item["image"]
+            if not (image.startswith("https://") or _local_upload_path(image)):
+                continue
+            caption = f"{item['n']}. {item['name']} — {item['price']} {item['currency']}"
+            await _send_catalog_image(db, phone, image, caption)
+            shown += 1
+    return [catalog_text]
 
 
 async def present_product(db: AsyncSession, phone: str, product: Product, stock: int) -> list[str]:
@@ -212,11 +229,17 @@ async def present_product(db: AsyncSession, phone: str, product: Product, stock:
     if image.startswith("https://") or _local_upload_path(image):
         await _send_catalog_image(db, phone, image, text)
     else:
-        await whatsapp.send_text(phone, text, db=db)
-    await whatsapp.send_reply_buttons(
-        phone, "Elegí cantidad o escribí el número.", payload["buttons"], db=db
-    )
-    return []
+        try:
+            await whatsapp.send_text(phone, text, db=db)
+        except CloudError:
+            return [text]
+    try:
+        await whatsapp.send_reply_buttons(
+            phone, "Elegí cantidad o escribí el número.", payload["buttons"], db=db
+        )
+        return []
+    except CloudError:
+        return [text]
 
 
 async def present_choices(
@@ -237,19 +260,31 @@ async def present_choices(
         for item in items
         if item.get("id") and item.get("title")
     ]
-    if 0 < len(short) <= 3:
-        await whatsapp.send_reply_buttons(phone, text, short, db=db)
-    else:
-        rows = [
-            {
-                "id": str(item.get("id") or "")[:200],
-                "title": clip(str(item.get("title") or ""), 24),
-                "description": clip(str(item.get("description") or ""), 72),
-            }
-            for item in items[:10]
-            if item.get("id") and item.get("title")
-        ]
-        await whatsapp.send_interactive_list(
-            phone, body=text, button=button[:20], rows=rows, db=db
-        )
-    return []
+    fallback = text
+    if items:
+        extra = []
+        for item in items[:10]:
+            title = str(item.get("title") or "").strip()
+            if title:
+                extra.append(f"• {title}")
+        if extra:
+            fallback = text + "\n" + "\n".join(extra)
+    try:
+        if 0 < len(short) <= 3:
+            await whatsapp.send_reply_buttons(phone, text, short, db=db)
+        else:
+            rows = [
+                {
+                    "id": str(item.get("id") or "")[:200],
+                    "title": clip(str(item.get("title") or ""), 24),
+                    "description": clip(str(item.get("description") or ""), 72),
+                }
+                for item in items[:10]
+                if item.get("id") and item.get("title")
+            ]
+            await whatsapp.send_interactive_list(
+                phone, body=text, button=button[:20], rows=rows, db=db
+            )
+        return []
+    except CloudError:
+        return [fallback]

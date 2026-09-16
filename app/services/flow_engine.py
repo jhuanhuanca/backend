@@ -125,8 +125,17 @@ async def handle_incoming(
         current, extra = await _auto_until_wait(current, ctx)
         replies.extend(extra)
         has_inbound = bool(inbound["text"] or inbound["is_image"])
-        if was_waiting and current and current.get("type") in WAIT_TYPES and has_inbound:
+        parked = current is not None and current.get("type") in WAIT_TYPES
+        if parked and has_inbound:
             nxt = _pick_edge(edges, current["id"], inbound, {}, mode="wait")
+            # Primer turno (salimos de Inicio y caímos en Esperar): el texto del wa.me
+            # tiene que disparar "catálogo"/"hola". No uses default: eso interpretaría
+            # "vengo del live" como producto.
+            if not was_waiting and nxt and (nxt.get("trigger_type") or "always") in {
+                "always",
+                "default",
+            }:
+                nxt = None
             if (
                 current.get("type") != "wait_payment"
                 and _looks_like_product(inbound.get("text") or "")
