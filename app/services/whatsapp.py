@@ -232,10 +232,24 @@ async def probe_connection(db: AsyncSession | None = None, company_id: str | Non
         return {"ok": False, "reason": str(exc)}
 
 
+class CloudError(Exception):
+    """Fallo de Graph API al enviar o subir media."""
+
+
 def _graph_error_es(data: dict, object_id: str) -> str:
     err = data.get("error") or {}
     code = err.get("code")
-    msg = str(err.get("message") or data or "")
+    sub = err.get("error_subcode")
+    msg = str(err.get("error_user_msg") or err.get("message") or data or "")
+    if code == 131047:
+        return (
+            "Pasaron más de 24 horas desde el último mensaje de esa persona. "
+            "WhatsApp solo deja responder con una plantilla de la cuenta."
+        )
+    if code == 131026:
+        return "Ese número no tiene WhatsApp o no puede recibir mensajes de esta cuenta."
+    if code in {131048, 130429}:
+        return "WhatsApp limitó los envíos. Esperá unos minutos e intentá de nuevo."
     if code in {100, 803} or "does not exist" in msg.lower() or "missing permissions" in msg.lower():
         return (
             f"Meta no reconoce el ID {object_id} como Phone Number ID con este token. "
@@ -246,7 +260,21 @@ def _graph_error_es(data: dict, object_id: str) -> str:
         )
     if code == 190 or "session" in msg.lower() or "expired" in msg.lower():
         return "El Access Token está vencido o es inválido. Generá uno permanente (usuario del sistema) y volvé a guardarlo."
+    if sub:
+        return msg or f"Error de WhatsApp ({code}/{sub})"
     return msg or "Error de Graph API"
+
+
+def _parse_graph_response(response: httpx.Response, object_id: str = "") -> dict:
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {"error": {"message": (response.text or "respuesta vacía")[:400]}}
+    if not isinstance(payload, dict):
+        payload = {"error": {"message": str(payload)[:400]}}
+    if response.is_error or payload.get("error"):
+        raise CloudError(_graph_error_es(payload, object_id))
+    return payload
 
 
 def verify_signature(raw_body: bytes, header: str | None, creds: Creds | None = None) -> bool:
@@ -280,8 +308,7 @@ async def send_text(
             headers={"Authorization": f"Bearer {creds.token}"},
             json=payload,
         )
-        response.raise_for_status()
-        return response.json()
+        return _parse_graph_response(response, creds.phone_number_id)
 
 
 MIME_BY_SUFFIX = {
@@ -380,8 +407,7 @@ async def _post_cloud(
             headers={"Authorization": f"Bearer {creds.token}"},
             json=body,
         )
-        response.raise_for_status()
-        return response.json()
+        return _parse_graph_response(response, creds.phone_number_id)
 
 
 async def send_image_link(
@@ -461,8 +487,11 @@ async def _upload_media(image_path: Path, creds: Creds, mime: str = "image/png")
                 files={"file": (image_path.name, handle, mime)},
                 data={"messaging_product": "whatsapp", "type": mime},
             )
-        response.raise_for_status()
-        return response.json()["id"]
+        data = _parse_graph_response(response, creds.phone_number_id)
+        media_id = data.get("id")
+        if not media_id:
+            raise CloudError("WhatsApp no devolvió el ID del archivo.")
+        return media_id
 
 
 async def download_media(

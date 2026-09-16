@@ -150,39 +150,52 @@ async def whatsapp_send(
     redir = require_user(request)
     if redir:
         return redir
+    phone = (phone or "").lstrip("+")
     form = await request.form()
     text = str(form.get("body") or "").strip()
     voice = str(form.get("voice") or "") in {"1", "on", "true", "yes"}
     media = form.get("media")
-    has_file = isinstance(media, UploadFile) and bool(media.filename)
+    has_file = isinstance(media, UploadFile) and bool(getattr(media, "filename", "") or "")
     if not text and not has_file:
         return RedirectResponse(f"/whatsapp/chat/{phone}?error=vacio", status_code=303)
-    if has_file:
-        raw = await media.read()
-        mime = inbox.mime_key(media.content_type or "")
-        kind = inbox.kind_from_upload(mime, media.filename or "")
-        limit = inbox.MAX_BYTES.get(kind, inbox.MAX_BYTES["document"])
-        if not raw:
-            return RedirectResponse(f"/whatsapp/chat/{phone}?error={quote('Archivo vacío')}", status_code=303)
-        if len(raw) > limit:
-            return RedirectResponse(
-                f"/whatsapp/chat/{phone}?error={quote('El archivo pesa demasiado')}",
-                status_code=303,
+    company_id = _company_id(request)
+    try:
+        if has_file:
+            raw = await media.read()
+            mime = inbox.mime_key(media.content_type or "")
+            kind = inbox.kind_from_upload(mime, media.filename or "")
+            limit = inbox.MAX_BYTES.get(kind, inbox.MAX_BYTES["document"])
+            if not raw:
+                return RedirectResponse(f"/whatsapp/chat/{phone}?error={quote('Archivo vacío')}", status_code=303)
+            if len(raw) > limit:
+                return RedirectResponse(
+                    f"/whatsapp/chat/{phone}?error={quote('El archivo pesa demasiado')}",
+                    status_code=303,
+                )
+            dest = inbox.save_chat_file(phone, raw, mime, media.filename or "")
+            await inbox.send_agent_media(
+                db,
+                phone,
+                dest,
+                msg_type=kind,
+                mime=mime,
+                caption=text,
+                voice=voice or kind == "audio",
+                company_id=company_id,
             )
-        dest = inbox.save_chat_file(phone, raw, mime, media.filename or "")
-        await inbox.send_agent_media(
-            db,
-            phone,
-            dest,
-            msg_type=kind,
-            mime=mime,
-            caption=text,
-            voice=voice or kind == "audio",
-        )
+        else:
+            await inbox.send_agent_text(db, phone, text, company_id=company_id)
         await db.commit()
-        return RedirectResponse(f"/whatsapp/chat/{phone}", status_code=303)
-    await inbox.send_agent_text(db, phone, text)
-    await db.commit()
+    except whatsapp.CloudError as exc:
+        await db.rollback()
+        return RedirectResponse(f"/whatsapp/chat/{phone}?error={quote(str(exc))}", status_code=303)
+    except Exception:
+        log.exception("No se pudo enviar a %s", phone)
+        await db.rollback()
+        return RedirectResponse(
+            f"/whatsapp/chat/{phone}?error={quote('No se pudo enviar. Revisá el token de WhatsApp o el log del servidor.')}",
+            status_code=303,
+        )
     return RedirectResponse(f"/whatsapp/chat/{phone}", status_code=303)
 
 

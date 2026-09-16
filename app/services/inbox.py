@@ -277,8 +277,11 @@ async def ingest_inbound(
     )
 
 
-async def send_agent_text(db: AsyncSession, phone: str, body: str) -> ChatMessage:
-    result = await whatsapp.send_text(phone, body, db=db)
+async def send_agent_text(
+    db: AsyncSession, phone: str, body: str, company_id: str | None = None
+) -> ChatMessage:
+    creds = await whatsapp.load_creds(db, company_id)
+    result = await whatsapp.send_text(phone, body, db=db, creds=creds)
     wamid = ""
     if result and not result.get("skipped"):
         wamid = ((result.get("messages") or [{}])[0] or {}).get("id") or ""
@@ -302,11 +305,13 @@ async def send_agent_media(
     mime: str = "",
     caption: str = "",
     voice: bool = False,
+    company_id: str | None = None,
 ) -> ChatMessage:
     mime = mime_key(mime) or whatsapp.mime_for_path(path)
     out_path = path
     if msg_type == "audio":
         out_path, mime, voice = prepare_outgoing_audio(path, mime, voice)
+    creds = await whatsapp.load_creds(db, company_id)
     result = await whatsapp.send_media(
         phone,
         out_path,
@@ -315,6 +320,7 @@ async def send_agent_media(
         mime=mime,
         voice=voice,
         db=db,
+        creds=creds,
     )
     wamid = ""
     if result and not result.get("skipped"):
