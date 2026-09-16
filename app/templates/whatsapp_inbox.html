@@ -1,28 +1,33 @@
 {% extends "base.html" %}
-{% block extra_wrap %} wrap-wide{% endblock %}
+{% block extra_wrap %} wrap-wide wa-page{% endblock %}
+{% block body_class %}wa-body{% endblock %}
 {% block title %}WhatsApp · {{ app_name }}{% endblock %}
 {% block content %}
-<h1>WhatsApp Hub</h1>
-  <p class="muted">Cada empresa pega acá sus credenciales de <strong>WhatsApp Cloud API</strong> (Meta). El token se cifra en la base y no se vuelve a mostrar entero. El .env queda solo como respaldo local.</p>
+<div class="wa-page-head">
+  <h1>WhatsApp Hub</h1>
+  {% if not active %}
+  <p class="muted">Cada empresa pega acá sus credenciales de <strong>WhatsApp Cloud API</strong> (Meta). El token se cifra en la base y no se vuelve a mostrar entero.</p>
   <p><a class="btn primary" href="/whatsapp/simulador">Probar el chatbot (simulador)</a></p>
+  {% endif %}
+  {% if flash_ok == "guardado" %}
+    <p class="badge pagado">Credenciales guardadas. Ya podés probar Graph API.</p>
+  {% elif flash_ok == "empresa" %}
+    <p class="badge pagado">Empresa creada. Completá el número de WhatsApp de este vendedor.</p>
+  {% endif %}
+  {% if flash_error and not active %}
+    <p class="badge cancelado">No se pudo guardar ({{ flash_error }}).</p>
+  {% endif %}
+</div>
 
-{% if flash_ok == "guardado" %}
-  <p class="badge pagado">Credenciales guardadas. Ya podés probar Graph API.</p>
-{% elif flash_ok == "empresa" %}
-  <p class="badge pagado">Empresa creada. Completá el número de WhatsApp de este vendedor.</p>
-{% endif %}
-{% if flash_error %}
-  <p class="badge cancelado">No se pudo guardar ({{ flash_error }}).</p>
-{% endif %}
-
-<section class="panel wa-conn">
-  <h2>Conexión Cloud API</h2>
-  <p>
+<details class="panel wa-conn"{% if not active %} open{% endif %}>
+  <summary>Conexión Cloud API
     {% if connection.configured %}
       <span class="badge pagado">lista para enviar</span>
     {% else %}
       <span class="badge cancelado">faltan token y Phone Number ID</span>
     {% endif %}
+  </summary>
+  <p>
     {% if connection.skip_signature %}
       <span class="badge pendiente_pago">firma webhook omitida (dev)</span>
     {% endif %}
@@ -110,7 +115,7 @@
     <button class="btn" type="submit">Agregar empresa</button>
   </form>
   <p class="muted">Cada empresa tiene su propio token. El login separado por vendedor viene después; hoy el admin elige la empresa activa.</p>
-</section>
+</details>
 
 <div class="wa-layout">
   <aside class="wa-list">
@@ -148,24 +153,26 @@
           </div>
         {% endfor %}
       </div>
-      <form class="wa-compose" id="wa-compose" method="post" action="/whatsapp/chat/{{ active }}" enctype="multipart/form-data">
-        <input type="file" id="wa-file" name="media" accept="image/*,video/*,audio/*,.pdf,.ogg,.mp3,.m4a,.mp4,.webm" hidden>
-        <input type="hidden" id="wa-voice" name="voice" value="">
-        <button class="btn wa-icon" type="button" id="wa-attach" title="Adjuntar foto, video o audio">📎</button>
-        <button class="btn wa-icon" type="button" id="wa-mic" title="Grabar audio">🎤</button>
-        <input name="body" id="wa-text" placeholder="Escribí un mensaje o adjuntá foto, video o audio…" autocomplete="off">
-        <button class="btn ok" type="submit">Enviar</button>
-      </form>
-      <p class="muted wa-compose-hint" id="wa-hint"></p>
-      {% if flash_error == "vacio" %}
-        <p class="badge cancelado">Escribí un texto o adjuntá un archivo.</p>
-      {% elif flash_error %}
-        <p class="badge cancelado">{{ flash_error }}</p>
-      {% endif %}
+      <div class="wa-footer">
+        <form class="wa-compose" id="wa-compose" method="post" action="/whatsapp/chat/{{ active }}" enctype="multipart/form-data">
+          <input type="file" id="wa-file" name="media" accept="image/*,video/*,audio/*,.pdf,.ogg,.mp3,.m4a,.mp4,.webm" hidden>
+          <input type="hidden" id="wa-voice" name="voice" value="">
+          <button class="btn wa-icon" type="button" id="wa-attach" title="Adjuntar foto, video o audio">📎</button>
+          <button class="btn wa-icon" type="button" id="wa-mic" title="Grabar audio">🎤</button>
+          <input name="body" id="wa-text" placeholder="Mensaje o archivo…" autocomplete="off">
+          <button class="btn ok" type="submit">Enviar</button>
+        </form>
+        <p class="muted wa-compose-hint" id="wa-hint"></p>
+        {% if flash_error == "vacio" %}
+          <p class="badge cancelado wa-flash">Escribí un texto o adjuntá un archivo.</p>
+        {% elif flash_error %}
+          <p class="badge cancelado wa-flash">{{ flash_error }}</p>
+        {% endif %}
+      </div>
     {% else %}
       <p class="muted wa-empty">Elegí un chat a la izquierda. El bot sigue respondiendo; acá ves el hilo y podés escribir vos.</p>
     {% endif %}
   </section>
 </div>
-<script src="/static/whatsapp_inbox.js?v=1"></script>
+<script src="/static/whatsapp_inbox.js?v=2"></script>
 {% endblock %}

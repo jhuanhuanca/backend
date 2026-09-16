@@ -94,4 +94,18 @@
   micBtn?.addEventListener("click", () => {
     toggleRecord().catch(() => setHint("No se pudo grabar el audio."));
   });
+
+  form.addEventListener("submit", (ev) => {
+    const text = (form.querySelector("#wa-text")?.value || "").trim();
+    const file = fileInput && fileInput.files && fileInput.files[0];
+    if (recorder && recorder.state === "recording") {
+      ev.preventDefault();
+      setHint("Terminá la grabación antes de enviar.");
+      return;
+    }
+    if (!text && !file) {
+      ev.preventDefault();
+      setHint("Escribí un texto o adjuntá un archivo.");
+    }
+  });
 })();
