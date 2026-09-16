@@ -684,6 +684,21 @@
     if (res.ok) location.reload();
   }
 
+  async function destroyFlow() {
+    const published = root.dataset.status === "published";
+    const msg = published
+      ? "¿Eliminar este flujo? WhatsApp volverá al bot de código."
+      : "¿Eliminar este flujo? No se puede deshacer.";
+    if (!confirm(msg)) return;
+    const res = await fetch("/api/flujos/" + flowId, { method: "DELETE" });
+    if (res.ok) {
+      location.href = "/flujos?ok=eliminado";
+      return;
+    }
+    const body = await res.json().catch(() => ({}));
+    setMsg(body.detail || "No se pudo eliminar");
+  }
+
   async function simulate() {
     const ok = await save();
     if (!ok) return;
@@ -728,6 +743,8 @@
   if (pub) pub.addEventListener("click", publish);
   const unp = document.getElementById("fs-unpublish");
   if (unp) unp.addEventListener("click", unpublish);
+  const delFlow = document.getElementById("fs-delete");
+  if (delFlow) delFlow.addEventListener("click", destroyFlow);
   document.getElementById("fs-sim").addEventListener("click", simulate);
   document.getElementById("fs-sim-text").addEventListener("keydown", (e) => {
     if (e.key === "Enter") simulate();

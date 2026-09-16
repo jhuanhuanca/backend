@@ -70,6 +70,7 @@ async def list_flows(request: Request, db: AsyncSession = Depends(get_db)):
             "active": active,
             "motor": motor,
             "motor_url": settings.motor_ia_url,
+            "ok": request.query_params.get("ok"),
         },
     )
 
@@ -286,6 +287,30 @@ async def unpublish_flow_form(request: Request, flow_id: str, db: AsyncSession =
         row.updated_at = utcnow()
         await db.commit()
     return RedirectResponse("/flujos", status_code=303)
+
+
+@router.post("/flujos/{flow_id}/eliminar")
+async def delete_flow_form(request: Request, flow_id: str, db: AsyncSession = Depends(get_db)):
+    redir = require_user(request)
+    if redir:
+        return redir
+    row = await db.get(BotFlow, flow_id)
+    if row:
+        await db.delete(row)
+        await db.commit()
+    return RedirectResponse("/flujos?ok=eliminado", status_code=303)
+
+
+@router.delete("/api/flujos/{flow_id}")
+async def delete_flow_api(request: Request, flow_id: str, db: AsyncSession = Depends(get_db)):
+    if not request.session.get("user"):
+        return JSONResponse({"detail": "login"}, status_code=401)
+    row = await db.get(BotFlow, flow_id)
+    if not row:
+        return JSONResponse({"detail": "no encontrado"}, status_code=404)
+    await db.delete(row)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/api/flujos/{flow_id}/publish")

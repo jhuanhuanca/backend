@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
@@ -16,6 +17,7 @@ from app.web import require_user, templates
 
 router = APIRouter(tags=["whatsapp-hub"])
 settings = get_settings()
+log = logging.getLogger("whatsapp.hub")
 
 
 def _company_id(request: Request) -> str | None:
@@ -127,18 +129,16 @@ async def whatsapp_chat(request: Request, phone: str, db: AsyncSession = Depends
     redir = require_user(request)
     if redir:
         return redir
-    await inbox.mark_read(db, phone)
-    await db.commit()
-    return templates.TemplateResponse(
-        request,
-        "whatsapp_inbox.html",
-        await _hub_context(
-            request,
-            db,
-            active=phone,
-            messages=await inbox.list_messages(db, phone),
-        ),
-    )
+    phone = (phone or "").lstrip("+")
+    try:
+        await inbox.mark_read(db, phone)
+        await db.commit()
+        messages = await inbox.list_messages(db, phone)
+        ctx = await _hub_context(request, db, active=phone, messages=messages)
+    except Exception:
+        log.exception("No se pudo abrir el chat %s", phone)
+        raise HTTPException(500, "No se pudo abrir este chat. Revisá el log de uvicorn.") from None
+    return templates.TemplateResponse(request, "whatsapp_inbox.html", ctx)
 
 
 @router.post("/whatsapp/chat/{phone}")

@@ -7,7 +7,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Customer, Order, OrderItem, Payment, Product, utcnow
+from app.models import (
+    Appointment,
+    ConversationState,
+    Customer,
+    InventoryReservation,
+    Order,
+    OrderItem,
+    Payment,
+    Product,
+    utcnow,
+)
 from app.services import inventory as inventory
 from app.services.codes import next_order_code
 from app.services.payments import prepare_payment_assets
@@ -153,6 +163,54 @@ async def cancel_order(db: AsyncSession, order: Order) -> Order:
             payment.status = "rejected"
     await db.flush()
     return order
+
+
+async def delete_order(db: AsyncSession, order: Order) -> None:
+    """Borra el pedido, pagos, entrega, reservas y reuniones ligadas. Devuelve stock."""
+    await inventory.unwind_order_stock(db, order.id)
+    holds = list(
+        await db.scalars(
+            select(InventoryReservation).where(InventoryReservation.order_id == order.id)
+        )
+    )
+    for hold in holds:
+        await db.delete(hold)
+    meetings = list(
+        await db.scalars(select(Appointment).where(Appointment.order_id == order.id))
+    )
+    for meeting in meetings:
+        await db.delete(meeting)
+    await _detach_order_from_chats(db, order)
+    await db.flush()
+    await db.delete(order)
+    await db.flush()
+
+
+async def _detach_order_from_chats(db: AsyncSession, order: Order) -> None:
+    rows = list(await db.scalars(select(ConversationState)))
+    for state in rows:
+        data = dict(state.data or {})
+        changed = False
+        if data.get("delivery_order_id") == order.id:
+            data.pop("delivery_order_id", None)
+            changed = True
+            if (state.step or "").startswith("deliv") or state.step in {
+                "ask_mode",
+                "ask_window",
+                "ask_address",
+            }:
+                state.step = "idle"
+        vars_ = data.get("vars")
+        if isinstance(vars_, dict) and (
+            vars_.get("order_id") == order.id or vars_.get("order_code") == order.public_code
+        ):
+            vars_ = dict(vars_)
+            vars_.pop("order_id", None)
+            vars_.pop("order_code", None)
+            data["vars"] = vars_
+            changed = True
+        if changed:
+            state.data = data
 
 
 async def latest_open_order(db: AsyncSession, customer_id: str) -> Order | None:

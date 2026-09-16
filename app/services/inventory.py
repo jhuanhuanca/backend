@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.models import InventoryReservation, Product, ProductVariant, utcnow
+from app.models import InventoryReservation, OrderItem, Product, ProductVariant, utcnow
 
 settings = get_settings()
 
@@ -122,3 +122,53 @@ async def release_reservations(db: AsyncSession, order_id: str) -> None:
     )
     for row in result:
         row.status = "released"
+
+
+async def unwind_order_stock(db: AsyncSession, order_id: str) -> None:
+    """Devuelve al inventario el stock de reservas ya consumidas y libera las activas."""
+    rows = list(
+        await db.scalars(
+            select(InventoryReservation).where(InventoryReservation.order_id == order_id)
+        )
+    )
+    for row in rows:
+        if row.status == "consumed":
+            if row.variant_id:
+                variant = await db.get(ProductVariant, row.variant_id)
+                if variant:
+                    variant.stock += row.quantity
+            else:
+                product = await db.get(Product, row.product_id)
+                if product:
+                    product.stock += row.quantity
+        row.status = "released"
+
+
+async def delete_product(db: AsyncSession, product_id: str) -> str:
+    product = await db.scalar(
+        select(Product)
+        .where(Product.id == product_id)
+        .options(selectinload(Product.variants))
+    )
+    if not product:
+        raise StockError("Producto no encontrado")
+    used = await db.scalar(select(OrderItem.id).where(OrderItem.product_id == product_id).limit(1))
+    reservations = list(
+        await db.scalars(
+            select(InventoryReservation).where(InventoryReservation.product_id == product_id)
+        )
+    )
+    for row in reservations:
+        await db.delete(row)
+    if used:
+        product.active = False
+        suffix = f"-X{product.id[:8]}"
+        base = (product.sku or "SKU")[: max(1, 64 - len(suffix))]
+        product.sku = f"{base}{suffix}"
+        await db.flush()
+        return "oculto"
+    for variant in list(product.variants or []):
+        await db.delete(variant)
+    await db.delete(product)
+    await db.flush()
+    return "eliminado"

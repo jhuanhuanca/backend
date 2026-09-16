@@ -3,6 +3,9 @@
 {% block content %}
 <h1>Flow Studio</h1>
 <p class="muted">Editor de conversación tipo n8n. Un flujo <strong>publicado</strong> es el que atiende WhatsApp y el simulador. Si no hay ninguno publicado, sigue el bot de código.</p>
+{% if ok == "eliminado" %}
+<p class="flash">Flujo eliminado.</p>
+{% endif %}
 
 <div class="panel" style="margin-bottom:16px">
   <strong>WhatsApp usa ahora:</strong>
@@ -67,7 +70,14 @@
           </form>
         {% endif %}
       </td>
-      <td><a class="btn" href="/flujos/{{ f.id }}/editar">Editar</a></td>
+      <td>
+        <div class="row-actions">
+          <a class="btn" href="/flujos/{{ f.id }}/editar">Editar</a>
+          <form method="post" action="/flujos/{{ f.id }}/eliminar" onsubmit="return confirm('¿Eliminar el flujo «{{ f.name }}»?{% if f.status == 'published' %} WhatsApp volverá al bot de código.{% endif %}');">
+            <button class="btn danger" type="submit">Eliminar</button>
+          </form>
+        </div>
+      </td>
     </tr>
     {% else %}
     <tr><td colspan="5" class="muted">Todavía no hay flujos. Creá uno con la plantilla de venta.</td></tr>

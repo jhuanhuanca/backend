@@ -24,7 +24,7 @@
         <button class="btn ok" type="submit">Confirmar pago</button>
       </form>
       <form method="post" action="/pedidos/{{ order.id }}/cancelar" style="display:inline">
-        <button class="btn danger" type="submit">Cancelar</button>
+        <button class="btn" type="submit">Cancelar</button>
       </form>
       {% endif %}
       {% if order.status == "pagado" %}
@@ -46,6 +46,10 @@
       </form>
       {% endif %}
     </div>
+    <form method="post" action="/pedidos/{{ order.id }}/eliminar" class="danger-zone" onsubmit="return confirm('¿Eliminar el pedido {{ order.public_code }}? Se borran ítems, pagos y reuniones ligadas. El stock vuelve al inventario.');">
+      <p class="muted">Esto saca el pedido del historial. No se puede deshacer.</p>
+      <button class="btn danger" type="submit">Eliminar pedido</button>
+    </form>
   </section>
   <section class="panel">
     <h2>Pago</h2>

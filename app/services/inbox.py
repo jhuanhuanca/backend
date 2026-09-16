@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.config import MEDIA_DIR
 from app.models import ChatMessage, Conversation, utcnow
@@ -155,7 +154,12 @@ async def record_message(
 
 
 async def mark_read(db: AsyncSession, phone: str) -> None:
-    conv = await db.scalar(select(Conversation).where(Conversation.phone == phone.lstrip("+")))
+    plain = (phone or "").lstrip("+")
+    conv = await db.scalar(
+        select(Conversation).where(
+            (Conversation.phone == plain) | (Conversation.phone == f"+{plain}")
+        )
+    )
     if conv:
         conv.unread_count = 0
 
@@ -168,15 +172,24 @@ async def list_conversations(db: AsyncSession) -> list[Conversation]:
 
 
 async def list_messages(db: AsyncSession, phone: str, limit: int = 200) -> list[ChatMessage]:
+    plain = (phone or "").lstrip("+")
     conv = await db.scalar(
-        select(Conversation)
-        .where(Conversation.phone == phone.lstrip("+"))
-        .options(selectinload(Conversation.messages))
+        select(Conversation).where(
+            (Conversation.phone == plain) | (Conversation.phone == f"+{plain}")
+        )
     )
     if not conv:
         return []
-    msgs = sorted(conv.messages, key=lambda m: m.created_at)
-    return msgs[-limit:]
+    rows = list(
+        await db.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.conversation_id == conv.id)
+            .order_by(desc(ChatMessage.created_at))
+            .limit(limit)
+        )
+    )
+    rows.reverse()
+    return rows
 
 
 def parse_inbound_payload(message: dict) -> dict:

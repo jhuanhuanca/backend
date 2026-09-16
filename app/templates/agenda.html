@@ -3,6 +3,9 @@
 {% block content %}
 <h1>Agenda de reuniones</h1>
 <p class="muted">Acá llegan las inscripciones y presentaciones de negocio que se agendan por WhatsApp (opción 2 del flujo de leads). Las reuniones de recojo ligadas a un pedido también aparecen.</p>
+{% if ok == "eliminado" %}
+<p class="flash">Reunión eliminada de la agenda.</p>
+{% endif %}
 <p class="filters">
   <a class="btn {% if not estado and not tipo %}primary{% endif %}" href="/agenda">Todas</a>
   <a class="btn {% if estado == 'scheduled' %}primary{% endif %}" href="/agenda?estado=scheduled">Programadas</a>
@@ -44,21 +47,26 @@
       </td>
       <td><span class="badge {{ a.status }}">{{ appt_status_label(a.status) }}</span></td>
       <td>
+        <div class="row-actions">
         {% if a.status == "scheduled" %}
-          <form method="post" action="/agenda/{{ a.id }}/estado" style="display:inline">
+          <form method="post" action="/agenda/{{ a.id }}/estado">
             <input type="hidden" name="status" value="done">
             <button class="btn ok" type="submit">Hecha</button>
           </form>
-          <form method="post" action="/agenda/{{ a.id }}/estado" style="display:inline">
+          <form method="post" action="/agenda/{{ a.id }}/estado">
             <input type="hidden" name="status" value="cancelled">
-            <button class="btn danger" type="submit">Cancelar</button>
+            <button class="btn" type="submit">Cancelar</button>
           </form>
         {% elif a.status != "scheduled" %}
-          <form method="post" action="/agenda/{{ a.id }}/estado" style="display:inline">
+          <form method="post" action="/agenda/{{ a.id }}/estado">
             <input type="hidden" name="status" value="scheduled">
             <button class="btn" type="submit">Reabrir</button>
           </form>
         {% endif %}
+          <form method="post" action="/agenda/{{ a.id }}/eliminar" onsubmit="return confirm('¿Eliminar esta reunión de la agenda?');">
+            <button class="btn danger" type="submit">Eliminar</button>
+          </form>
+        </div>
       </td>
     </tr>
   {% else %}

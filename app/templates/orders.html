@@ -2,6 +2,9 @@
 {% block title %}Pedidos · {{ app_name }}{% endblock %}
 {% block content %}
 <h1>Pedidos</h1>
+{% if ok == "eliminado" %}
+<p class="flash">Pedido eliminado. El stock se liberó.</p>
+{% endif %}
 <p class="filters">
   <a class="btn {% if not estado %}primary{% endif %}" href="/pedidos">Todos</a>
   <a class="btn {% if estado == 'pendiente_pago' %}primary{% endif %}" href="/pedidos?estado=pendiente_pago">Pendiente pago</a>
@@ -9,6 +12,7 @@
   <a class="btn {% if estado == 'listo_entrega' %}primary{% endif %}" href="/pedidos?estado=listo_entrega">Listos</a>
   <a class="btn {% if estado == 'en_transito' %}primary{% endif %}" href="/pedidos?estado=en_transito">En camino</a>
   <a class="btn {% if estado == 'entregado' %}primary{% endif %}" href="/pedidos?estado=entregado">Entregados</a>
+  <a class="btn {% if estado == 'cancelado' %}primary{% endif %}" href="/pedidos?estado=cancelado">Cancelados</a>
 </p>
 <table>
   <thead>
@@ -32,22 +36,27 @@
       <td><span class="badge {{ o.status }}">{{ order_status_label(o.status) }}</span></td>
       <td>{{ delivery_summary(o) }}</td>
       <td>
+        <div class="row-actions">
         {% if o.status == "pendiente_pago" %}
-          <form method="post" action="/pedidos/{{ o.id }}/confirmar-pago" style="display:inline">
+          <form method="post" action="/pedidos/{{ o.id }}/confirmar-pago">
             <button class="btn ok" type="submit">Confirmar pago</button>
           </form>
         {% elif o.status in ["pagado", "listo_entrega"] %}
-          <form method="post" action="/pedidos/{{ o.id }}/estado" style="display:inline">
+          <form method="post" action="/pedidos/{{ o.id }}/estado">
             <input type="hidden" name="status" value="en_transito">
             <button class="btn" type="submit">En camino</button>
           </form>
         {% endif %}
         {% if o.status in ["pagado", "listo_entrega", "en_transito"] %}
-          <form method="post" action="/pedidos/{{ o.id }}/estado" style="display:inline">
+          <form method="post" action="/pedidos/{{ o.id }}/estado">
             <input type="hidden" name="status" value="entregado">
             <button class="btn ok" type="submit">Entregado</button>
           </form>
         {% endif %}
+          <form method="post" action="/pedidos/{{ o.id }}/eliminar" onsubmit="return confirm('¿Eliminar el pedido {{ o.public_code }}? Se borran ítems, pagos y reuniones ligadas. El stock vuelve al inventario.');">
+            <button class="btn danger" type="submit">Eliminar</button>
+          </form>
+        </div>
       </td>
     </tr>
   {% else %}

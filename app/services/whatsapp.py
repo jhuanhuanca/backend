@@ -222,11 +222,31 @@ async def probe_connection(db: AsyncSession | None = None, company_id: str | Non
             )
             data = response.json()
             if response.is_error:
-                err = (data.get("error") or {}).get("message") or response.text
-                return {"ok": False, "reason": err, "status": response.status_code}
+                return {
+                    "ok": False,
+                    "reason": _graph_error_es(data, creds.phone_number_id),
+                    "status": response.status_code,
+                }
             return {"ok": True, "graph": data}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": str(exc)}
+
+
+def _graph_error_es(data: dict, object_id: str) -> str:
+    err = data.get("error") or {}
+    code = err.get("code")
+    msg = str(err.get("message") or data or "")
+    if code in {100, 803} or "does not exist" in msg.lower() or "missing permissions" in msg.lower():
+        return (
+            f"Meta no reconoce el ID {object_id} como Phone Number ID con este token. "
+            "En WhatsApp → API Setup copiá el campo Phone number ID (no el WABA ID, "
+            "no el App ID y no el número 76364961). El token tiene que ser de la misma app "
+            "y de un usuario del sistema con permiso sobre ese número. Si la app está en "
+            "modo Desarrollo, tu cuenta de Meta debe ser tester o admin."
+        )
+    if code == 190 or "session" in msg.lower() or "expired" in msg.lower():
+        return "El Access Token está vencido o es inválido. Generá uno permanente (usuario del sistema) y volvé a guardarlo."
+    return msg or "Error de Graph API"
 
 
 def verify_signature(raw_body: bytes, header: str | None, creds: Creds | None = None) -> bool:

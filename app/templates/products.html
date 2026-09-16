@@ -5,6 +5,11 @@
 {% if store_url %}
 <p class="muted">Tienda pública: <a href="{{ store_url }}" target="_blank" rel="noopener">{{ store_url }}</a></p>
 {% endif %}
+{% if ok == "eliminado" %}
+<p class="flash">Producto eliminado del inventario y del catálogo.</p>
+{% elif ok == "oculto" %}
+<p class="flash">Producto quitado del catálogo. Se conservó porque ya hay pedidos con ese ítem.</p>
+{% endif %}
 <section class="panel">
   <h2>Nuevo producto</h2>
   <form class="stack" method="post" action="/inventario">
@@ -50,6 +55,9 @@
           <form class="inline" method="post" action="/inventario/{{ p.id }}/stock">
             <input name="stock" type="number" value="{{ p.stock }}" style="max-width:90px">
             <button class="btn" type="submit">Ajustar</button>
+          </form>
+          <form class="inline" method="post" action="/inventario/{{ p.id }}/eliminar" onsubmit="return confirm('¿Eliminar este producto del inventario y del catálogo?');">
+            <button class="btn danger" type="submit">Eliminar</button>
           </form>
         </div>
       </td>

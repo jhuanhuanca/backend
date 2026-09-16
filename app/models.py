@@ -190,7 +190,9 @@ class Order(Base):
     payments: Mapped[list["Payment"]] = relationship(
         back_populates="order", cascade="all, delete-orphan"
     )
-    reservations: Mapped[list["InventoryReservation"]] = relationship(back_populates="order")
+    reservations: Mapped[list["InventoryReservation"]] = relationship(
+        back_populates="order", cascade="all, delete-orphan"
+    )
     delivery: Mapped[Optional["Delivery"]] = relationship(
         back_populates="order", uselist=False, cascade="all, delete-orphan"
     )

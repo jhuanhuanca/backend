@@ -42,9 +42,9 @@ def upload_url(path: str | None) -> str:
     if not path:
         return ""
     try:
-        rel = Path(path).resolve().relative_to(UPLOADS_DIR.resolve())
+        rel = Path(str(path)).expanduser().resolve().relative_to(UPLOADS_DIR.resolve())
         return f"/uploads/{rel.as_posix()}"
-    except ValueError:
+    except (ValueError, OSError, RuntimeError):
         return ""
 
 
@@ -59,16 +59,34 @@ templates.env.globals["appt_status_label"] = lambda s: APPT_STATUS_LABEL.get(s, 
 
 def require_user(request: Request):
     if not request.session.get("user"):
-        return RedirectResponse("/login", status_code=303)
+        nxt = request.url.path
+        if request.url.query:
+            nxt = f"{nxt}?{request.url.query}"
+        if not nxt.startswith("/") or nxt.startswith("//"):
+            nxt = "/"
+        return RedirectResponse(f"/login?next={quote(nxt, safe='')}", status_code=303)
     return None
 
 
+def _safe_next(value: str) -> str:
+    path = (value or "").strip()
+    if not path.startswith("/") or path.startswith("//") or "\\" in path:
+        return "/"
+    return path
+
+
 @router.get("/login")
-async def login_form(request: Request):
+async def login_form(request: Request, next: str = ""):
     if request.session.get("user"):
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse(_safe_next(next) if next else "/", status_code=303)
     return templates.TemplateResponse(
-        request, "login.html", {"error": None, "app_name": settings.app_name}
+        request,
+        "login.html",
+        {
+            "error": None,
+            "app_name": settings.app_name,
+            "next": _safe_next(next) if next else "/",
+        },
     )
 
 
@@ -77,14 +95,19 @@ async def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
+    next: str = Form(""),
 ):
     if username == settings.dashboard_user and password == settings.dashboard_password:
         request.session["user"] = username
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse(_safe_next(next), status_code=303)
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"error": "Usuario o contraseña incorrectos", "app_name": settings.app_name},
+        {
+            "error": "Usuario o contraseña incorrectos",
+            "app_name": settings.app_name,
+            "next": _safe_next(next),
+        },
     )
 
 
@@ -188,6 +211,7 @@ async def orders_page(
             "user": request.session.get("user"),
             "orders": rows,
             "estado": estado,
+            "ok": request.query_params.get("ok"),
         },
     )
 
@@ -221,6 +245,7 @@ async def agenda_page(
             "appointments": rows,
             "estado": estado,
             "tipo": tipo,
+            "ok": request.query_params.get("ok"),
         },
     )
 
@@ -244,6 +269,23 @@ async def agenda_status(
     appt.updated_at = utcnow()
     await db.commit()
     return RedirectResponse("/agenda", status_code=303)
+
+
+@router.post("/agenda/{appt_id}/eliminar")
+async def delete_appointment(
+    request: Request,
+    appt_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    redir = require_user(request)
+    if redir:
+        return redir
+    appt = await db.get(Appointment, appt_id)
+    if not appt:
+        raise HTTPException(404, "Reunión no encontrada")
+    await db.delete(appt)
+    await db.commit()
+    return RedirectResponse("/agenda?ok=eliminado", status_code=303)
 
 
 @router.get("/pedidos/{order_id}")
@@ -289,6 +331,23 @@ async def cancel(request: Request, order_id: str, db: AsyncSession = Depends(get
     await order_svc.cancel_order(db, order)
     await db.commit()
     return RedirectResponse(f"/pedidos/{order_id}", status_code=303)
+
+
+@router.post("/pedidos/{order_id}/eliminar")
+async def delete_order(
+    request: Request,
+    order_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    redir = require_user(request)
+    if redir:
+        return redir
+    order = await order_svc.load_order(db, order_id)
+    if not order:
+        raise HTTPException(404, "Pedido no encontrado")
+    await order_svc.delete_order(db, order)
+    await db.commit()
+    return RedirectResponse("/pedidos?ok=eliminado", status_code=303)
 
 
 @router.post("/pedidos/{order_id}/entrega")
@@ -358,7 +417,7 @@ async def inventory_page(request: Request, db: AsyncSession = Depends(get_db)):
     from app.services import whatsapp as wa
 
     company = await wa.get_company(db, request.session.get("company_id"))
-    query = select(Product).order_by(Product.name)
+    query = select(Product).where(Product.active.is_(True)).order_by(Product.name)
     if company:
         query = query.where(
             (Product.company_id == company.id) | (Product.company_id.is_(None))
@@ -377,6 +436,7 @@ async def inventory_page(request: Request, db: AsyncSession = Depends(get_db)):
             "products": products,
             "stocks": stocks,
             "store_url": store_url,
+            "ok": request.query_params.get("ok"),
         },
     )
 
@@ -542,6 +602,23 @@ async def adjust_stock(
         product.stock = stock
         await db.commit()
     return RedirectResponse("/inventario", status_code=303)
+
+
+@router.post("/inventario/{product_id}/eliminar")
+async def delete_product(
+    request: Request,
+    product_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    redir = require_user(request)
+    if redir:
+        return redir
+    try:
+        result = await inventory.delete_product(db, product_id)
+        await db.commit()
+    except inventory.StockError:
+        raise HTTPException(404, "Producto no encontrado")
+    return RedirectResponse(f"/inventario?ok={result}", status_code=303)
 
 
 @router.get("/tienda")

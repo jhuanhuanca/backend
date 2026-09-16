@@ -56,6 +56,7 @@ th { color: var(--muted); font-weight: 600; }
 .badge.listo_entrega { background: #1e3d4d; color: #a8d8f0; }
 .badge.en_transito { background: #3d2a16; color: #ffd48a; }
 .badge.entregado { background: #1e4d36; color: #b6f0cc; }
+.badge.cancelado { background: #4d1e1e; color: #ffb4b4; }
 .badge.scheduled { background: #1e3d4d; color: #a8d8f0; }
 .badge.done { background: #1e4d36; color: #b6f0cc; }
 .badge.cancelled { background: #4d1e1e; color: #ffb4b4; }
@@ -96,6 +97,21 @@ form.stack textarea { min-height: 72px; }
 }
 .form-grid label { display: block; font-size: 13px; color: var(--muted); }
 .row-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row-actions form { display: inline; margin: 0; }
+.flash {
+  background: #1e4d36;
+  color: #b6f0cc;
+  border: 1px solid #2f8f5b;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 14px;
+}
+.danger-zone {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.panel.danger-zone { border-color: #5a2a2a; }
 @media (max-width: 900px) { .form-grid { grid-template-columns: 1fr 1fr; } }
 .muted { color: var(--muted); }
 .grid-2 { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; }

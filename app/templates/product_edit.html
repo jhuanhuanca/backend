@@ -31,4 +31,11 @@
     <button class="btn primary" type="submit">Guardar ficha</button>
   </form>
 </section>
+<section class="panel danger-zone" style="margin-top:16px">
+  <h2>Eliminar</h2>
+  <p class="muted">Sale del inventario, del catálogo de WhatsApp y de la tienda. Si ya se vendió, se oculta para no romper los pedidos viejos.</p>
+  <form method="post" action="/inventario/{{ product.id }}/eliminar" onsubmit="return confirm('¿Eliminar este producto del inventario y del catálogo?');">
+    <button class="btn danger" type="submit">Eliminar producto</button>
+  </form>
+</section>
 {% endblock %}
