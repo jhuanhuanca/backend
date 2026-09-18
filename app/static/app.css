@@ -62,6 +62,7 @@ th { color: var(--muted); font-weight: 600; }
 .badge.cancelled { background: #4d1e1e; color: #ffb4b4; }
 .badge.lead { background: #3d2a4d; color: #e0c4ff; }
 .badge.order { background: #1e3d4d; color: #a8d8f0; }
+.badge.call { background: #1e3d4d; color: #b6f0cc; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
 .order-actions { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
 .btn {
@@ -241,6 +242,15 @@ body.wa-body header.app { flex-shrink: 0; flex-wrap: wrap; }
   gap: 8px;
   padding: 10px 12px;
   align-items: center;
+  position: relative;
+}
+.wa-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 .wa-compose input[name="body"] {
   width: 100%;
@@ -255,6 +265,45 @@ body.wa-body header.app { flex-shrink: 0; flex-wrap: wrap; }
 .wa-compose-hint { margin: 0 12px 8px; min-height: 1.2em; }
 .wa-flash { margin: 0 12px 8px; }
 .wa-empty { padding: 40px 20px; }
+.wa-bubble.wa-wide { max-width: 94%; }
+.wa-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+.wa-card {
+  background: #0e1410;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 0 0 8px;
+}
+.wa-card img {
+  width: 100%;
+  height: 92px;
+  object-fit: cover;
+  max-width: none;
+  border-radius: 0;
+}
+.wa-card-n {
+  display: inline-block;
+  margin: 6px 8px 0;
+  background: #2f8f5b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+.wa-card strong, .wa-card em, .wa-card small {
+  display: block;
+  padding: 0 8px;
+}
+.wa-card strong { font-size: 12px; margin-top: 4px; }
+.wa-card em { font-style: normal; color: #b6f0cc; font-size: 12px; }
+.wa-card small { color: var(--muted); font-size: 11px; }
+.wa-choices { margin: 6px 0 0; padding-left: 18px; }
 @media (max-width: 800px) {
   .wa-layout {
     grid-template-columns: 1fr;

@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Clientes · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Clientes</h1>
+<p class="muted">Solo vos creás empresas y usuarios. Cada cliente entra a su panel, con su WhatsApp y sus flujos. Para crear o suspender se pide el código 2FA.</p>
+{% if ok == "creado" %}<p class="flash">Cliente creado. Ya puede entrar con su usuario.</p>{% endif %}
+{% if ok == "2fa" %}<p class="flash">2FA activado. Ya podés dar de alta clientes.</p>{% endif %}
+{% if ok == "estado" %}<p class="flash">Estado del usuario actualizado.</p>{% endif %}
+{% if error == "2fa" %}<p class="badge cancelado">Código 2FA incorrecto o todavía no activaste 2FA.</p>{% endif %}
+{% if error == "datos" %}<p class="badge cancelado">Completá empresa, usuario y una clave de al menos 6 caracteres.</p>{% endif %}
+{% if error == "usuario" %}<p class="badge cancelado">Ese usuario ya existe.</p>{% endif %}
+{% if error == "no" %}<p class="badge cancelado">No se encontró ese registro.</p>{% endif %}
+
+<section class="panel" style="margin-bottom:20px">
+  <h2>Nuevo cliente</h2>
+  <form method="post" action="/clientes" class="stack">
+    <div class="form-grid">
+      <label>Nombre de la empresa / tienda<input name="company_name" required placeholder="Ej. Tienda La Paz"></label>
+      <label>Usuario de acceso<input name="username" required autocomplete="off"></label>
+      <label>Contraseña inicial<input name="password" type="password" required minlength="6" autocomplete="new-password"></label>
+      <label>Código 2FA tuyo<input name="totp" inputmode="numeric" maxlength="8" required placeholder="6 dígitos"></label>
+    </div>
+    <p class="muted">WhatsApp Cloud API (opcional ahora; lo podés completar después desde el panel de esa empresa).</p>
+    <div class="form-grid">
+      <label>Número de negocio<input name="business_e164" placeholder="5917…"></label>
+      <label>Phone Number ID<input name="phone_number_id"></label>
+      <label>Access Token<input name="access_token" type="password" autocomplete="new-password"></label>
+      <label>Verify Token webhook<input name="verify_token" type="password" autocomplete="new-password"></label>
+    </div>
+    <button class="btn primary" type="submit">Crear cliente</button>
+  </form>
+</section>
+
+<table>
+  <thead>
+    <tr>
+      <th>Empresa</th>
+      <th>Usuarios</th>
+      <th>WhatsApp</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in companies %}
+    <tr>
+      <td>
+        <strong>{{ c.name }}</strong>
+        {% if c.id == active_company %}<span class="badge live">panel activo</span>{% endif %}
+        <br><span class="muted">/t/{{ c.slug }}</span>
+      </td>
+      <td>
+        {% for u in by_company.get(c.id, []) %}
+          <div>
+            {{ u.username }}
+            {% if u.role == "superadmin" %}
+              <span class="badge">dueño</span>
+            {% else %}
+              <span class="badge {% if u.is_active %}pagado{% else %}cancelado{% endif %}">{{ "activo" if u.is_active else "suspendido" }}</span>
+              {% if u.role != "superadmin" %}
+              <form method="post" action="/clientes/{{ u.id }}/estado" class="inline" style="display:inline">
+                <input name="totp" placeholder="2FA" maxlength="8" style="width:5.5rem">
+                <button class="btn" type="submit">{{ "Suspender" if u.is_active else "Activar" }}</button>
+              </form>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% else %}
+          <span class="muted">Sin usuario de vendedor</span>
+        {% endfor %}
+      </td>
+      <td>
+        {% if wa_ready.get(c.id) %}
+          <span class="badge pagado">configurado</span>
+        {% else %}
+          <span class="badge cancelado">falta API</span>
+        {% endif %}
+      </td>
+      <td>
+        <form method="post" action="/clientes/{{ c.id }}/entrar">
+          <button class="btn" type="submit">Abrir su panel</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">Todavía no hay empresas.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<p style="margin-top:16px"><a href="/seguridad/2fa">Configurar 2FA</a></p>
+{% endblock %}

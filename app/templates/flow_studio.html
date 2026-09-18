@@ -2,7 +2,7 @@
 {% block title %}{{ flow.name }} · Flow Studio{% endblock %}
 {% block extra_wrap %} wrap-studio{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/flow_studio.css?v=4">
+<link rel="stylesheet" href="/static/flow_studio.css?v=10">
 <div id="studio" data-flow-id="{{ flow.id }}" data-status="{{ flow.status }}">
   <div class="fs-toolbar">
     <a href="/flujos" class="btn">← Flujos</a>
@@ -29,44 +29,54 @@
     {% if flow.status == 'published' %}
       Este flujo atiende WhatsApp y el simulador.
     {% else %}
-      Este es un borrador. WhatsApp sigue con el flujo publicado (o el bot de código) hasta que pulses <strong>Usar en WhatsApp</strong>.
+      Esto es un borrador. WhatsApp no cambia hasta que pulses <strong>Usar en WhatsApp</strong>.
     {% endif %}
+    <span class="fs-howto">Cómo armarlo: 1) tocá un bloque a la izquierda · 2) uní el puntito azul con el siguiente paso · 3) a la derecha decí <em>cuándo</em> seguir. Para opciones táctiles usá <strong>Botones</strong> (no hace falta escribir 1, 2, 3). Los días de la agenda salen de <strong>Agendar entrega o reunión</strong>.</span>
   </p>
   <div class="fs-layout">
     <aside class="fs-palette">
-      <h2>Nodos</h2>
+      {% set ns = namespace(group="") %}
       {% for item in palette %}
+      {% if item.group and item.group != ns.group %}
+      {% set ns.group = item.group %}
+      <h2>{{ item.group }}</h2>
+      {% endif %}
       <button type="button" class="fs-pal-item" data-type="{{ item.type }}">
         <strong>{{ item.label }}</strong>
         <span>{{ item.hint }}</span>
       </button>
       {% endfor %}
-      <p class="muted fs-hint">Clic para agregar. El panel de la derecha configura el nodo y sus salidas.</p>
+      <p class="muted fs-hint">Cada bloque es un paso del chat. Arrastralo en el mapa y conectalo con el siguiente.</p>
     </aside>
     <div class="fs-canvas-wrap" id="fs-canvas-wrap">
+      <div class="fs-connect-bar" id="fs-connect-bar" hidden>
+        <span id="fs-connect-text">Elegí el siguiente paso</span>
+        <button type="button" class="btn" id="fs-connect-cancel">Cancelar</button>
+      </div>
       <svg class="fs-edges" id="fs-edges"></svg>
       <div class="fs-nodes" id="fs-nodes"></div>
     </div>
     <aside class="fs-side">
       <div class="fs-wire" id="fs-wire">
-        <h2>Conectar nodos</h2>
-        <p class="muted">Elegí origen y destino. No hace falta usar los puntitos del lienzo.</p>
-        <label>Desde<br><select id="wire-from"></select></label>
-        <label>Hacia<br><select id="wire-to"></select></label>
-        <label>Cuando<br>
+        <h2>Unir dos pasos</h2>
+        <p class="muted">Elegí de dónde sale y a dónde va. También podés tocar el puntito azul y después el otro bloque.</p>
+        <label>Este paso<br><select id="wire-from"></select></label>
+        <label>Siguiente paso<br><select id="wire-to"></select></label>
+        <label>Seguir cuando<br>
           <select id="wire-trig">
-            <option value="always">Siempre</option>
-            <option value="default">Si no coincide otra</option>
-            <option value="keyword">Palabras clave</option>
-            <option value="is_digit">Es un número</option>
-            <option value="is_image">Es una foto</option>
-            <option value="found">Producto encontrado</option>
-            <option value="not_found">Producto no encontrado</option>
-            <option value="transition">Transición IA</option>
+            <option value="always">Siempre (al toque)</option>
+            <option value="keyword">Si escribe estas palabras</option>
+            <option value="is_digit">Si manda un número</option>
+            <option value="is_image">Si manda una foto o archivo</option>
+            <option value="default">Si no entendió (cualquier otra cosa)</option>
+            <option value="found">Si encontró el producto</option>
+            <option value="not_found">Si no encontró el producto</option>
+            <option value="transition">Según lo que decida la IA</option>
+            <option value="regex">Texto especial (avanzado)</option>
           </select>
         </label>
-        <label>Palabras / clave<br><input id="wire-key" placeholder="hola,menu"></label>
-        <button type="button" class="btn primary" id="wire-link">Conectar</button>
+        <label>Palabras (separadas por coma)<br><input id="wire-key" placeholder="ej. hola, catálogo, 1"></label>
+        <button type="button" class="btn primary" id="wire-link">Unir</button>
       </div>
       <div class="fs-inspector" id="fs-inspector">
         <p class="muted">Seleccioná un nodo.</p>
@@ -82,5 +92,5 @@
     </aside>
   </div>
 </div>
-<script src="/static/flow_studio.js?v=5"></script>
+<script src="/static/flow_studio.js?v=10"></script>
 {% endblock %}

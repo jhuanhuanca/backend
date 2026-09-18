@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Código 2FA · {{ app_name }}</title>
+  <link rel="stylesheet" href="/static/app.css?v=6">
+</head>
+<body>
+  <main class="wrap login">
+    <div class="panel">
+      <h1>Verificación en dos pasos</h1>
+      <p class="muted">Abrí Google Authenticator (o Authy) y escribí el código de 6 dígitos.</p>
+      {% if error %}<p class="badge cancelado">{{ error }}</p>{% endif %}
+      <form method="post">
+        <p><label>Código<br><input name="code" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="one-time-code" autofocus></label></p>
+        <button class="btn primary" type="submit">Confirmar</button>
+      </form>
+      <form action="/logout" method="post" style="margin-top:12px"><button class="btn" type="submit">Cancelar</button></form>
+    </div>
+  </main>
+</body>
+</html>

@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.config import PAY_DIR, UPLOADS_DIR, get_settings
 from app.database import get_db
 from app.models import Appointment, Company, FarmDevice, LiveSession, Order, Product, utcnow
-from app.services import deliveries, inventory, live, orders as order_svc
+from app.services import auth, deliveries, inventory, live, orders as order_svc, tenancy
 from app.services.deliveries import (
     APPT_STATUS_LABEL,
     KIND_LABEL,
@@ -39,10 +39,13 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "tem
 
 
 def upload_url(path: str | None) -> str:
-    if not path:
+    raw = str(path or "").strip()
+    if not raw:
         return ""
+    if raw.startswith(("http://", "https://", "/uploads/")):
+        return raw
     try:
-        rel = Path(str(path)).expanduser().resolve().relative_to(UPLOADS_DIR.resolve())
+        rel = Path(raw).expanduser().resolve().relative_to(UPLOADS_DIR.resolve())
         return f"/uploads/{rel.as_posix()}"
     except (ValueError, OSError, RuntimeError):
         return ""
@@ -58,14 +61,52 @@ templates.env.globals["appt_status_label"] = lambda s: APPT_STATUS_LABEL.get(s, 
 
 
 def require_user(request: Request):
-    if not request.session.get("user"):
+    if request.session.get("pending_2fa"):
+        if request.url.path not in {"/login/2fa", "/logout"}:
+            return RedirectResponse("/login/2fa", status_code=303)
+    if not request.session.get("user_id"):
         nxt = request.url.path
         if request.url.query:
             nxt = f"{nxt}?{request.url.query}"
         if not nxt.startswith("/") or nxt.startswith("//"):
             nxt = "/"
         return RedirectResponse(f"/login?next={quote(nxt, safe='')}", status_code=303)
+    tenancy.bind_request(request)
+    if (
+        request.session.get("role") == auth.ROLE_SUPERADMIN
+        and not request.session.get("totp_enabled")
+        and not request.url.path.startswith("/seguridad")
+        and request.url.path != "/logout"
+    ):
+        return RedirectResponse("/seguridad/2fa", status_code=303)
     return None
+
+
+def require_superadmin(request: Request):
+    redir = require_user(request)
+    if redir:
+        return redir
+    if request.session.get("role") != auth.ROLE_SUPERADMIN:
+        return RedirectResponse("/", status_code=303)
+    return None
+
+
+def _tenant_id(request: Request) -> str | None:
+    return request.session.get("company_id") or None
+
+
+def _belongs(request: Request, company_id: str | None) -> bool:
+    cid = _tenant_id(request)
+    if not cid or not company_id:
+        return True
+    return company_id == cid
+
+
+async def _owned_order(db: AsyncSession, request: Request, order_id: str) -> Order | None:
+    order = await db.get(Order, order_id)
+    if not order or not _belongs(request, order.company_id):
+        return None
+    return order
 
 
 def _safe_next(value: str) -> str:
@@ -77,7 +118,9 @@ def _safe_next(value: str) -> str:
 
 @router.get("/login")
 async def login_form(request: Request, next: str = ""):
-    if request.session.get("user"):
+    if request.session.get("pending_2fa"):
+        return RedirectResponse("/login/2fa", status_code=303)
+    if request.session.get("user_id"):
         return RedirectResponse(_safe_next(next) if next else "/", status_code=303)
     return templates.TemplateResponse(
         request,
@@ -93,22 +136,36 @@ async def login_form(request: Request, next: str = ""):
 @router.post("/login")
 async def login_submit(
     request: Request,
+    db: AsyncSession = Depends(get_db),
     username: str = Form(...),
     password: str = Form(...),
     next: str = Form(""),
 ):
-    if username == settings.dashboard_user and password == settings.dashboard_password:
-        request.session["user"] = username
-        return RedirectResponse(_safe_next(next), status_code=303)
-    return templates.TemplateResponse(
-        request,
-        "login.html",
-        {
-            "error": "Usuario o contraseña incorrectos",
-            "app_name": settings.app_name,
-            "next": _safe_next(next),
-        },
-    )
+    user = await auth.find_user(db, username)
+    if (
+        not user
+        or not user.is_active
+        or not auth.verify_password(password, user.password_hash)
+    ):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "Usuario o contraseña incorrectos",
+                "app_name": settings.app_name,
+                "next": _safe_next(next),
+            },
+            status_code=401,
+        )
+    if user.totp_enabled:
+        request.session.clear()
+        request.session["pending_2fa"] = user.id
+        request.session["login_next"] = _safe_next(next)
+        return RedirectResponse("/login/2fa", status_code=303)
+    await auth.establish_session(request, db, user)
+    if user.role == auth.ROLE_SUPERADMIN and not user.totp_enabled:
+        return RedirectResponse("/seguridad/2fa", status_code=303)
+    return RedirectResponse(_safe_next(next), status_code=303)
 
 
 @router.post("/logout")
@@ -122,38 +179,47 @@ async def home(request: Request, db: AsyncSession = Depends(get_db)):
     redir = require_user(request)
     if redir:
         return redir
+    cid = _tenant_id(request)
     await inventory.expire_reservations(db)
-    order_count = await db.scalar(select(func.count(Order.id)))
-    pending = await db.scalar(
-        select(func.count(Order.id)).where(Order.status == "pendiente_pago")
+    order_q = select(func.count(Order.id))
+    pending_q = select(func.count(Order.id)).where(Order.status == "pendiente_pago")
+    paid_q = select(func.count(Order.id)).where(Order.status == "pagado")
+    delivering_q = select(func.count(Order.id)).where(
+        Order.status.in_(["listo_entrega", "en_transito"])
     )
-    paid = await db.scalar(select(func.count(Order.id)).where(Order.status == "pagado"))
-    delivering = await db.scalar(
-        select(func.count(Order.id)).where(Order.status.in_(["listo_entrega", "en_transito"]))
-    )
+    appt_q = select(func.count(Appointment.id)).where(Appointment.status == "scheduled")
+    if cid:
+        order_q = order_q.where(Order.company_id == cid)
+        pending_q = pending_q.where(Order.company_id == cid)
+        paid_q = paid_q.where(Order.company_id == cid)
+        delivering_q = delivering_q.where(Order.company_id == cid)
+        appt_q = appt_q.where(Appointment.company_id == cid)
+    order_count = await db.scalar(order_q)
+    pending = await db.scalar(pending_q)
+    paid = await db.scalar(paid_q)
+    delivering = await db.scalar(delivering_q)
     live_count = await db.scalar(
         select(func.count(LiveSession.id)).where(LiveSession.status == "live")
     )
     device_count = await db.scalar(select(func.count(FarmDevice.id)))
-    appointment_count = await db.scalar(
-        select(func.count(Appointment.id)).where(Appointment.status == "scheduled")
+    appointment_count = await db.scalar(appt_q)
+    recent_q = (
+        select(Order)
+        .options(selectinload(Order.customer), selectinload(Order.items))
+        .order_by(desc(Order.created_at))
+        .limit(8)
     )
-    recent = list(
-        await db.scalars(
-            select(Order)
-            .options(selectinload(Order.customer), selectinload(Order.items))
-            .order_by(desc(Order.created_at))
-            .limit(8)
-        )
+    upcoming_q = (
+        select(Appointment)
+        .where(Appointment.status == "scheduled")
+        .order_by(Appointment.scheduled_at.asc().nulls_last(), desc(Appointment.created_at))
+        .limit(6)
     )
-    upcoming = list(
-        await db.scalars(
-            select(Appointment)
-            .where(Appointment.status == "scheduled")
-            .order_by(Appointment.scheduled_at.asc().nulls_last(), desc(Appointment.created_at))
-            .limit(6)
-        )
-    )
+    if cid:
+        recent_q = recent_q.where(Order.company_id == cid)
+        upcoming_q = upcoming_q.where(Appointment.company_id == cid)
+    recent = list(await db.scalars(recent_q))
+    upcoming = list(await db.scalars(upcoming_q))
     devices = list(await db.scalars(select(FarmDevice).order_by(FarmDevice.serial)))
     lives = await live.active_lives_by_serial(db)
     sessions = list(
@@ -200,6 +266,9 @@ async def orders_page(
         selectinload(Order.session),
         selectinload(Order.delivery),
     )
+    cid = _tenant_id(request)
+    if cid:
+        query = query.where(Order.company_id == cid)
     if estado:
         query = query.where(Order.status == estado)
     rows = list(await db.scalars(query.order_by(desc(Order.created_at))))
@@ -227,6 +296,9 @@ async def agenda_page(
     if redir:
         return redir
     query = select(Appointment)
+    cid = _tenant_id(request)
+    if cid:
+        query = query.where(Appointment.company_id == cid)
     if estado:
         query = query.where(Appointment.status == estado)
     if tipo:
@@ -263,7 +335,7 @@ async def agenda_status(
     if status not in APPT_STATUS_LABEL:
         raise HTTPException(400, "Estado inválido")
     appt = await db.get(Appointment, appt_id)
-    if not appt:
+    if not appt or not _belongs(request, appt.company_id):
         raise HTTPException(404, "Reunión no encontrada")
     appt.status = status
     appt.updated_at = utcnow()
@@ -281,7 +353,7 @@ async def delete_appointment(
     if redir:
         return redir
     appt = await db.get(Appointment, appt_id)
-    if not appt:
+    if not appt or not _belongs(request, appt.company_id):
         raise HTTPException(404, "Reunión no encontrada")
     await db.delete(appt)
     await db.commit()
@@ -293,7 +365,7 @@ async def order_detail(request: Request, order_id: str, db: AsyncSession = Depen
     redir = require_user(request)
     if redir:
         return redir
-    order = await order_svc.load_order(db, order_id)
+    order = await _owned_order(db, request, order_id)
     if not order:
         raise HTTPException(404, "Pedido no encontrado")
     return templates.TemplateResponse(
@@ -308,7 +380,7 @@ async def confirm_pay(request: Request, order_id: str, db: AsyncSession = Depend
     redir = require_user(request)
     if redir:
         return redir
-    order = await order_svc.load_order(db, order_id)
+    order = await _owned_order(db, request, order_id)
     if not order:
         raise HTTPException(404)
     await order_svc.confirm_payment(db, order)
@@ -325,7 +397,7 @@ async def cancel(request: Request, order_id: str, db: AsyncSession = Depends(get
     redir = require_user(request)
     if redir:
         return redir
-    order = await order_svc.load_order(db, order_id)
+    order = await _owned_order(db, request, order_id)
     if not order:
         raise HTTPException(404)
     await order_svc.cancel_order(db, order)
@@ -342,7 +414,7 @@ async def delete_order(
     redir = require_user(request)
     if redir:
         return redir
-    order = await order_svc.load_order(db, order_id)
+    order = await _owned_order(db, request, order_id)
     if not order:
         raise HTTPException(404, "Pedido no encontrado")
     await order_svc.delete_order(db, order)
@@ -364,7 +436,7 @@ async def save_delivery(
     redir = require_user(request)
     if redir:
         return redir
-    order = await order_svc.load_order(db, order_id)
+    order = await _owned_order(db, request, order_id)
     if not order:
         raise HTTPException(404)
     await deliveries.apply_from_dashboard(
@@ -390,7 +462,7 @@ async def change_status(
     redir = require_user(request)
     if redir:
         return redir
-    order = await order_svc.load_order(db, order_id)
+    order = await _owned_order(db, request, order_id)
     if not order:
         raise HTTPException(404)
     try:
@@ -419,9 +491,7 @@ async def inventory_page(request: Request, db: AsyncSession = Depends(get_db)):
     company = await wa.get_company(db, request.session.get("company_id"))
     query = select(Product).where(Product.active.is_(True)).order_by(Product.name)
     if company:
-        query = query.where(
-            (Product.company_id == company.id) | (Product.company_id.is_(None))
-        )
+        query = query.where(Product.company_id == company.id)
     products = list(await db.scalars(query))
     stocks = {p.id: await inventory.available_stock(db, p.id) for p in products}
     store_url = (
@@ -527,7 +597,7 @@ async def edit_product_page(
     if redir:
         return redir
     product = await db.get(Product, product_id)
-    if not product:
+    if not product or not _belongs(request, product.company_id):
         raise HTTPException(404, "Producto no encontrado")
     return templates.TemplateResponse(
         request,
@@ -565,7 +635,7 @@ async def update_product(
     if redir:
         return redir
     product = await db.get(Product, product_id)
-    if not product:
+    if not product or not _belongs(request, product.company_id):
         raise HTTPException(404, "Producto no encontrado")
     _fill_product(
         product,
@@ -598,9 +668,10 @@ async def adjust_stock(
     if redir:
         return redir
     product = await db.get(Product, product_id)
-    if product:
-        product.stock = stock
-        await db.commit()
+    if not product or not _belongs(request, product.company_id):
+        raise HTTPException(404, "Producto no encontrado")
+    product.stock = stock
+    await db.commit()
     return RedirectResponse("/inventario", status_code=303)
 
 
@@ -613,6 +684,9 @@ async def delete_product(
     redir = require_user(request)
     if redir:
         return redir
+    product = await db.get(Product, product_id)
+    if not product or not _belongs(request, product.company_id):
+        raise HTTPException(404, "Producto no encontrado")
     try:
         result = await inventory.delete_product(db, product_id)
         await db.commit()
@@ -783,7 +857,7 @@ async def delete_pay_qr(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/dispositivos")
 async def devices_page(request: Request, db: AsyncSession = Depends(get_db)):
-    redir = require_user(request)
+    redir = require_superadmin(request)
     if redir:
         return redir
     devices = list(await db.scalars(select(FarmDevice).order_by(FarmDevice.serial)))

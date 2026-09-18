@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import MEDIA_DIR
 from app.models import ChatMessage, Conversation, utcnow
-from app.services import whatsapp
+from app.services import tenancy, whatsapp
 
 EXT = {
     "image/jpeg": ".jpg",
@@ -36,7 +36,7 @@ EXT = {
 }
 
 MAX_BYTES = {
-    "image": 5 * 1024 * 1024,
+    "image": 8 * 1024 * 1024,
     "video": 16 * 1024 * 1024,
     "audio": 16 * 1024 * 1024,
     "document": 20 * 1024 * 1024,
@@ -56,6 +56,8 @@ def kind_from_upload(mime: str, filename: str = "") -> str:
         return "video"
     if mime.startswith("audio/") or name.endswith((".ogg", ".opus", ".mp3", ".m4a", ".aac", ".amr", ".wav", ".webm")):
         return "audio"
+    if name.endswith((".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".txt")):
+        return "document"
     if name.endswith(".webm"):
         return "video" if mime.startswith("video/") else "audio"
     return "document"
@@ -106,12 +108,18 @@ async def get_or_create_conversation(
     db: AsyncSession, phone: str, name: str = ""
 ) -> Conversation:
     phone = phone.lstrip("+")
-    row = await db.scalar(select(Conversation).where(Conversation.phone == phone))
+    cid = await tenancy.resolve_company_id(db)
+    query = select(Conversation).where(Conversation.phone == phone)
+    if cid:
+        query = query.where(Conversation.company_id == cid)
+    row = await db.scalar(query)
     if row:
         if name and name != phone and (not row.name or row.name == row.phone):
             row.name = name
+        if cid and not row.company_id:
+            row.company_id = cid
         return row
-    row = Conversation(phone=phone, name=name or phone)
+    row = Conversation(phone=phone, name=name or phone, company_id=cid)
     db.add(row)
     await db.flush()
     return row
@@ -154,30 +162,22 @@ async def record_message(
 
 
 async def mark_read(db: AsyncSession, phone: str) -> None:
-    plain = (phone or "").lstrip("+")
-    conv = await db.scalar(
-        select(Conversation).where(
-            (Conversation.phone == plain) | (Conversation.phone == f"+{plain}")
-        )
-    )
+    conv = await tenancy.get_conversation(db, phone)
     if conv:
         conv.unread_count = 0
 
 
 async def list_conversations(db: AsyncSession) -> list[Conversation]:
-    result = await db.scalars(
-        select(Conversation).order_by(desc(Conversation.last_message_at))
-    )
+    query = select(Conversation).order_by(desc(Conversation.last_message_at))
+    cid = tenancy.current_company_id()
+    if cid:
+        query = query.where(Conversation.company_id == cid)
+    result = await db.scalars(query)
     return list(result)
 
 
 async def list_messages(db: AsyncSession, phone: str, limit: int = 200) -> list[ChatMessage]:
-    plain = (phone or "").lstrip("+")
-    conv = await db.scalar(
-        select(Conversation).where(
-            (Conversation.phone == plain) | (Conversation.phone == f"+{plain}")
-        )
-    )
+    conv = await tenancy.get_conversation(db, phone)
     if not conv:
         return []
     rows = list(
@@ -312,21 +312,35 @@ async def send_agent_media(
     if msg_type == "audio":
         out_path, mime, voice = prepare_outgoing_audio(path, mime, voice)
     creds = await whatsapp.load_creds(db, company_id)
-    result = await whatsapp.send_media(
-        phone,
-        out_path,
-        kind=msg_type,
-        caption=caption,
-        mime=mime,
-        voice=voice,
-        db=db,
-        creds=creds,
-    )
+    try:
+        result = await whatsapp.send_media(
+            phone,
+            out_path,
+            kind=msg_type,
+            caption=caption,
+            mime=mime,
+            voice=voice,
+            db=db,
+            creds=creds,
+        )
+    except whatsapp.CloudError:
+        if msg_type == "document":
+            raise
+        result = await whatsapp.send_media(
+            phone,
+            out_path,
+            kind="document",
+            caption=caption,
+            mime=mime or "application/octet-stream",
+            db=db,
+            creds=creds,
+        )
+        msg_type = "document"
     wamid = ""
     if result and not result.get("skipped"):
         wamid = ((result.get("messages") or [{}])[0] or {}).get("id") or ""
     labels = {"image": "Foto", "video": "Video", "audio": "Audio", "document": "Archivo"}
-    preview = caption.strip() or labels.get(msg_type, "[media]")
+    preview = (caption or "").strip() or labels.get(msg_type, "[media]")
     return await record_message(
         db,
         phone=phone,
@@ -359,19 +373,44 @@ async def record_bot_text(db: AsyncSession, phone: str, body: str, send_result: 
 async def record_bot_image(
     db: AsyncSession, phone: str, image_path: Path, caption: str, send_result: dict | None
 ) -> None:
+    await record_bot_media(
+        db,
+        phone,
+        msg_type="image",
+        caption=caption,
+        path=image_path,
+        mime="image/png",
+        send_result=send_result,
+    )
+
+
+async def record_bot_media(
+    db: AsyncSession,
+    phone: str,
+    *,
+    msg_type: str,
+    caption: str = "",
+    path: Path | str | None = None,
+    mime: str = "",
+    send_result: dict | None = None,
+) -> None:
     wamid = ""
     if send_result and not send_result.get("skipped"):
         wamid = ((send_result.get("messages") or [{}])[0] or {}).get("id") or ""
+    media_path = str(path) if path else ""
+    mime_type = mime or (whatsapp.mime_for_path(Path(media_path)) if media_path and not str(media_path).startswith("http") else "")
+    labels = {"image": "Foto", "video": "Video", "audio": "Audio", "document": "Archivo"}
     await record_message(
         db,
         phone=phone,
         direction="outbound",
         source="bot",
-        msg_type="image",
-        body=caption,
+        msg_type=msg_type,
+        body=caption or "",
         provider_id=wamid,
-        media_path=str(image_path),
-        mime_type="image/png",
+        media_path=media_path,
+        mime_type=mime_type,
+        preview=((caption or "").strip() or labels.get(msg_type, "[media]")),
     )
 
 

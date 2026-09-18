@@ -54,6 +54,7 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 from app.api.farm import router as farm_router  # noqa: E402
 from app.api.whatsapp import router as whatsapp_router  # noqa: E402
 from app.web import router as web_router  # noqa: E402
+from app.web_admin import router as admin_router  # noqa: E402
 from app.web_whatsapp import router as whatsapp_hub_router  # noqa: E402
 from app.web_flows import router as flows_router  # noqa: E402
 from app.web_shop import router as shop_router  # noqa: E402
@@ -61,6 +62,7 @@ from app.web_shop import router as shop_router  # noqa: E402
 app.include_router(farm_router)
 app.include_router(whatsapp_router)
 app.include_router(web_router)
+app.include_router(admin_router)
 app.include_router(whatsapp_hub_router)
 app.include_router(flows_router)
 app.include_router(shop_router)

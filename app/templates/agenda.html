@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Agenda · {{ app_name }}{% endblock %}
 {% block content %}
-<h1>Agenda de reuniones</h1>
-<p class="muted">Acá llegan las inscripciones y presentaciones de negocio que se agendan por WhatsApp (opción 2 del flujo de leads). Las reuniones de recojo ligadas a un pedido también aparecen.</p>
+<h1>Agenda</h1>
+<p class="muted">Reuniones de inscripción, ventas y llamadas de 30 minutos agendadas por WhatsApp.</p>
 {% if ok == "eliminado" %}
 <p class="flash">Reunión eliminada de la agenda.</p>
 {% endif %}
@@ -13,6 +13,7 @@
   <a class="btn {% if estado == 'cancelled' %}primary{% endif %}" href="/agenda?estado=cancelled">Canceladas</a>
   <a class="btn {% if tipo == 'lead' %}primary{% endif %}" href="/agenda?tipo=lead">Inscripción</a>
   <a class="btn {% if tipo == 'order' %}primary{% endif %}" href="/agenda?tipo=order">Venta</a>
+  <a class="btn {% if tipo == 'call' %}primary{% endif %}" href="/agenda?tipo=call">Llamadas</a>
 </p>
 <table>
   <thead>
@@ -70,7 +71,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="8" class="muted">Todavía no hay reuniones. En el simulador elegí la opción 2 (inscribirme) y completá ciudad, presencial/virtual y horario.</td></tr>
+    <tr><td colspan="8" class="muted">Todavía no hay citas. Las llamadas de 30 min y las reuniones agendadas por WhatsApp aparecen acá.</td></tr>
   {% endfor %}
   </tbody>
 </table>

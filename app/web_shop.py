@@ -56,7 +56,7 @@ async def load_store(db: AsyncSession, slug: str) -> dict:
         )
     )
     if not products and company.is_default:
-        products = await inventory.list_catalog(db)
+        products = await inventory.list_catalog(db, company.id)
     stocks = {p.id: await inventory.available_stock(db, p.id) for p in products}
     categories: list[str] = []
     seen: set[str] = set()

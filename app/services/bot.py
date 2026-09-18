@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROOFS_DIR, get_settings
 from app.models import ConversationState, Product, utcnow
-from app.services import deliveries, inbox, inventory, live, orders, wa_catalog, whatsapp
+from app.services import deliveries, inbox, inventory, live, orders, tenancy, wa_catalog, whatsapp
 from app.services.inventory import StockError
 
 settings = get_settings()
@@ -32,12 +32,13 @@ async def handle_incoming(
         if code_match:
             session = await live.get_by_code(db, code_match.group(0))
             if session:
+                if state.live_session_id != session.id:
+                    replies.append(
+                        f"Quedaste vinculado al live {session.public_code}"
+                        + (f" (@{session.tiktok_username})" if session.tiktok_username else "")
+                        + "."
+                    )
                 state.live_session_id = session.id
-                replies.append(
-                    f"Quedaste vinculado al live {session.public_code}"
-                    + (f" (@{session.tiktok_username})" if session.tiktok_username else "")
-                    + "."
-                )
 
     if text and not image_media_id:
         scheduled = await deliveries.handle_incoming(db, phone=phone, name=name, text=text)
@@ -179,11 +180,4 @@ async def _cancel_open(db: AsyncSession, phone: str) -> str:
 
 
 async def _get_state(db: AsyncSession, phone: str) -> ConversationState:
-    phone = phone.lstrip("+")
-    row = await db.get(ConversationState, phone)
-    if not row:
-        row = ConversationState(phone=phone, step="idle", data={})
-        db.add(row)
-        await db.flush()
-    row.updated_at = utcnow()
-    return row
+    return await tenancy.get_or_create_state(db, phone)

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import Appointment, Conversation, ConversationState, Customer, Delivery, Order, utcnow
-from app.services import inbox, wa_catalog, whatsapp
+from app.services import inbox, tenancy, wa_catalog, whatsapp
 
 SLOT_HOURS = (10, 14, 18)
 SLOT_LABEL = {
@@ -86,10 +86,12 @@ STATUS_LABEL = {
 PURPOSE_LABEL = {
     "lead": "Inscripción / presentación",
     "order": "Reunión de venta",
+    "call": "Llamada",
 }
 KIND_LABEL = {
     "presencial": "Presencial",
     "virtual": "Virtual",
+    "llamada": "Llamada",
 }
 APPT_STATUS_LABEL = {
     "scheduled": "Programada",
@@ -211,14 +213,7 @@ def address_prompt(mode: str) -> str:
 
 
 async def get_or_create_state(db: AsyncSession, phone: str) -> ConversationState:
-    phone = phone.lstrip("+")
-    row = await db.get(ConversationState, phone)
-    if not row:
-        row = ConversationState(phone=phone, step="idle", data={})
-        db.add(row)
-        await db.flush()
-    row.updated_at = utcnow()
-    return row
+    return await tenancy.get_or_create_state(db, phone)
 
 
 async def get_or_create_delivery(db: AsyncSession, order: Order) -> Delivery:
@@ -746,8 +741,10 @@ async def persist_meeting_appointment(
     kind = str(data.get("meeting_kind") or vars_.get("meeting_kind") or "")
     if mode != "meeting":
         return None
-    customer = await db.scalar(select(Customer).where(Customer.phone == phone))
-    conv = await db.scalar(select(Conversation).where(Conversation.phone == phone))
+    customer = await db.scalar(
+        select(Customer).where(Customer.phone == phone, Customer.company_id == tenancy.current_company_id())
+    ) if tenancy.current_company_id() else await db.scalar(select(Customer).where(Customer.phone == phone))
+    conv = await tenancy.get_conversation(db, phone)
     name = (
         (customer.name if customer else "")
         or (conv.name if conv else "")
@@ -761,7 +758,7 @@ async def persist_meeting_appointment(
     existing_id = data.get("appointment_id") or vars_.get("appointment_id")
     appt = await db.get(Appointment, str(existing_id)) if existing_id else None
     if not appt:
-        appt = Appointment(phone=phone, status="scheduled")
+        appt = Appointment(phone=phone, status="scheduled", company_id=tenancy.current_company_id())
         db.add(appt)
     appt.customer_name = name
     appt.purpose = "order" if has_product else "lead"
@@ -890,12 +887,11 @@ async def begin_preorder(db: AsyncSession, phone: str, config: dict | None = Non
     extra = await wa_catalog.present_choices(
         db,
         phone,
-        text="¿Cómo lo recibís?\n1. Envío local (La Paz / El Alto)\n2. Envío a otro departamento\n3. Reunión / recojo",
+        text="¿Cómo lo recibís?",
         items=fulfillment_items(modes),
         button="Elegir",
         preview="Tipo de envío",
     )
-    extra.append("Respondé 1, 2 o 3.")
     return extra
 
 

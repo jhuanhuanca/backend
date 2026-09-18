@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Flujos · {{ app_name }}{% endblock %}
 {% block content %}
-<h1>Flow Studio</h1>
-<p class="muted">Editor de conversación tipo n8n. Un flujo <strong>publicado</strong> es el que atiende WhatsApp y el simulador. Si no hay ninguno publicado, sigue el bot de código.</p>
+<h1>Flujos de WhatsApp</h1>
+<p class="muted">Armá la conversación como un mapa: el bot dice algo, espera la respuesta y sigue. El flujo <strong>en uso</strong> es el que atiende WhatsApp. Si no hay ninguno, sigue el bot automático.</p>
 {% if ok == "eliminado" %}
 <p class="flash">Flujo eliminado.</p>
 {% endif %}

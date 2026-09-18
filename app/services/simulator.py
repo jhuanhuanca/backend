@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 from app.config import UPLOADS_DIR
 from app.models import Conversation, ConversationState
 from app.services import conversation as conv_svc
-from app.services import inbox
+from app.services import inbox, tenancy
 from app.services.whatsapp import skip_cloud_send
 
 DEFAULT_PHONE = "59170009999"
@@ -24,10 +24,13 @@ def clean_phone(phone: str) -> str:
 
 
 def media_url(path: str | None) -> str:
-    if not path:
+    raw = (path or "").strip()
+    if not raw:
         return ""
+    if raw.startswith(("http://", "https://", "/uploads/")):
+        return raw
     try:
-        rel = Path(path).resolve().relative_to(UPLOADS_DIR.resolve())
+        rel = Path(raw).resolve().relative_to(UPLOADS_DIR.resolve())
         return f"/uploads/{rel.as_posix()}"
     except ValueError:
         return ""
@@ -46,8 +49,9 @@ def serialize_message(msg) -> dict:
         image = str(rich.get("image") or "")
         if not image:
             items = rich.get("items") or []
-            if items and items[0].get("image"):
-                image = str(items[0]["image"])
+            first = items[0] if items and isinstance(items[0], dict) else {}
+            if first.get("image"):
+                image = str(first["image"])
     return {
         "id": msg.id,
         "direction": msg.direction,
@@ -62,7 +66,7 @@ def serialize_message(msg) -> dict:
 
 async def snapshot(db: AsyncSession, phone: str) -> dict:
     phone = clean_phone(phone)
-    state = await db.get(ConversationState, phone)
+    state = await tenancy.get_or_create_state(db, phone)
     messages = await inbox.list_messages(db, phone)
     return {
         "phone": phone,
@@ -177,14 +181,18 @@ async def send_as_customer_file(
 
 async def reset_chat(db: AsyncSession, phone: str) -> dict:
     phone = clean_phone(phone)
-    state = await db.get(ConversationState, phone)
+    state = await tenancy.get_or_create_state(db, phone)
     if state:
         await db.delete(state)
-    conv = await db.scalar(
+    cid = tenancy.current_company_id()
+    query = (
         select(Conversation)
         .where(Conversation.phone == phone)
         .options(selectinload(Conversation.messages))
     )
+    if cid:
+        query = query.where(Conversation.company_id == cid)
+    conv = await db.scalar(query)
     if conv:
         conv.messages.clear()
         conv.last_preview = ""

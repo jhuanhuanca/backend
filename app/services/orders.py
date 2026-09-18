@@ -19,6 +19,7 @@ from app.models import (
     utcnow,
 )
 from app.services import inventory as inventory
+from app.services import tenancy
 from app.services.codes import next_order_code
 from app.services.payments import prepare_payment_assets
 
@@ -31,12 +32,18 @@ async def get_or_create_customer(
     db: AsyncSession, phone: str, name: str = ""
 ) -> Customer:
     phone = phone.lstrip("+")
-    row = await db.scalar(select(Customer).where(Customer.phone == phone))
+    cid = await tenancy.resolve_company_id(db)
+    query = select(Customer).where(Customer.phone == phone)
+    if cid:
+        query = query.where(Customer.company_id == cid)
+    row = await db.scalar(query)
     if row:
         if name and not row.name:
             row.name = name
+        if cid and not row.company_id:
+            row.company_id = cid
         return row
-    row = Customer(phone=phone, name=name or phone)
+    row = Customer(phone=phone, name=name or phone, company_id=cid)
     db.add(row)
     await db.flush()
     return row
@@ -69,6 +76,7 @@ async def create_whatsapp_order(
         raise inventory.StockError(f"Stock insuficiente (disponible: {free})")
     order = Order(
         public_code=await next_order_code(db),
+        company_id=await tenancy.resolve_company_id(db),
         customer_id=customer.id,
         session_id=session_id,
         channel="whatsapp",

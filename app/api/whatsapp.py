@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import ProcessedWebhook
-from app.services import conversation, inbox, whatsapp
-from app.services.whatsapp import CloudError
+from app.services import conversation, inbox, whatsapp, tenancy
+from app.services.whatsapp import CloudError, use_creds
 
 router = APIRouter(tags=["whatsapp"])
 
@@ -108,21 +108,22 @@ async def _dispatch(db: AsyncSession, payload: dict, creds) -> None:
                 name = profile.get("name") or wa_id
                 parsed = inbox.parse_inbound_payload(message)
                 try:
-                    await inbox.ingest_inbound(db, phone=wa_id, name=name, parsed=parsed, creds=creds)
-                    media_id = parsed.get("media_id") if parsed.get("msg_type") == "image" else None
-                    replies = await conversation.run_conversation(
-                        db,
-                        phone=wa_id,
-                        name=name,
-                        text=parsed.get("body") or None,
-                        image_media_id=media_id,
-                    )
-                    for reply in replies:
-                        try:
-                            sent = await whatsapp.send_text(wa_id, reply, db=db, creds=creds)
-                        except CloudError:
-                            sent = None
-                        await inbox.record_bot_text(db, wa_id, reply, sent)
+                    with use_creds(creds), tenancy.use_company(creds.company_id):
+                        await inbox.ingest_inbound(db, phone=wa_id, name=name, parsed=parsed, creds=creds)
+                        media_id = parsed.get("media_id") if parsed.get("msg_type") == "image" else None
+                        replies = await conversation.run_conversation(
+                            db,
+                            phone=wa_id,
+                            name=name,
+                            text=parsed.get("body") or None,
+                            image_media_id=media_id,
+                        )
+                        for reply in replies:
+                            try:
+                                sent = await whatsapp.send_text(wa_id, reply, db=db, creds=creds)
+                            except CloudError:
+                                sent = None
+                            await inbox.record_bot_text(db, wa_id, reply, sent)
                     await db.commit()
                 except Exception:
                     await db.rollback()

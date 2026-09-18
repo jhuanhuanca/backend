@@ -2,38 +2,104 @@
   const root = document.getElementById("studio");
   if (!root) return;
   const flowId = root.dataset.flowId;
-  const NODE_W = 168;
-  const NODE_H = 56;
+  const NODE_W = 188;
+  const MAX_BUTTONS = 10;
+
+  const NODE_META = {
+    start: { label: "Inicio" },
+    message: { label: "Mensaje" },
+    catalog: { label: "Catálogo" },
+    buttons: { label: "Botones" },
+    send_image: { label: "Imagen" },
+    send_audio: { label: "Audio" },
+    send_video: { label: "Video" },
+    wait_input: { label: "Esperar respuesta" },
+    wait_payment: { label: "Esperar foto de pago" },
+    match_product: { label: "Buscar producto" },
+    create_order: { label: "Crear pedido y QR" },
+    attach_proof: { label: "Guardar foto de pago" },
+    capture: { label: "Guardar lo que dijo" },
+    schedule_fulfillment: { label: "Agendar entrega o reunión" },
+    schedule_call: { label: "Agendar llamada" },
+    order_status: { label: "Estado del pedido" },
+    cancel_order: { label: "Cancelar pedido" },
+    ai_reply: { label: "Responder con IA" },
+    handoff: { label: "Pasar a una persona" },
+    end: { label: "Terminar" },
+  };
 
   const TRIGGERS = [
-    ["always", "Siempre"],
-    ["default", "Si no coincide otra"],
-    ["keyword", "Palabras clave"],
-    ["regex", "Regex"],
-    ["is_digit", "Es un número"],
-    ["is_image", "Es una foto"],
-    ["found", "Producto encontrado"],
-    ["not_found", "Producto no encontrado"],
-    ["transition", "Transición IA"],
+    ["always", "Siempre (al toque)"],
+    ["keyword", "Si escribe estas palabras"],
+    ["is_digit", "Si manda un número"],
+    ["is_image", "Si manda una foto o archivo"],
+    ["default", "Si no entendió (otra cosa)"],
+    ["found", "Si encontró el producto"],
+    ["not_found", "Si no encontró el producto"],
+    ["transition", "Según lo que decida la IA"],
+    ["regex", "Texto especial (avanzado)"],
   ];
 
   const NODE_HELP = {
-    start: "Entrada del chat. Conectalo al primer nodo (casi siempre Esperar texto).",
-    message: "Texto que envía el bot. Podés usar {{product_name}} {{qty}} {{order_code}} {{total}} {{currency}}.",
-    catalog: "Elegí productos, subí una foto de portada y conectá una salida (casi siempre a Esperar texto).",
-    wait_input: "Pausa hasta el próximo mensaje. Acá se configuran las salidas: palabras, número, foto o “si no coincide”.",
-    wait_payment: "Espera el comprobante. Salida típica: “Es una foto” hacia Guardar comprobante.",
-    match_product: "Busca el producto por número o nombre. Usá salidas encontrado / no encontrado.",
-    create_order: "Crea el pedido y manda el QR. Podés cobrar adelanto % + envío local o interior.",
-    attach_proof: "Guarda la foto del comprobante. Conectá a un mensaje con {{confirm_detail}}.",
-    capture: "Guarda un dato (ciudad, tipo de reunión). value fijo o el último texto del cliente.",
-    schedule_fulfillment: "Pregunta envío local, otro departamento o reunión y agenda día/hora.",
-    order_status: "Responde el estado del pedido abierto.",
-    cancel_order: "Cancela el pedido y libera stock.",
-    ai_reply: "Llama al motor-ia. Las salidas de tipo Transición IA usan la clave (buy, human, default).",
-    handoff: "Pausa el bot y avisa que atiende una persona.",
-    end: "Reinicia el flujo al nodo Inicio.",
+    start: "Punto de partida. Unilo al primer mensaje o al menú.",
+    message: "Texto que envía el bot. Podés pegar {{product_name}} {{qty}} {{order_code}} para rellenar solo.",
+    catalog: "Muestra los productos del inventario. Después unilo a “Esperar respuesta” para que elijan uno.",
+    buttons: "Hasta 3 salen como botones en el chat. Si ponés 4 a 10, WhatsApp abre un menú “Ver opciones”. Escribí el texto y a qué paso va cada una.",
+    send_image: "Manda una foto. Subí el archivo o pegá una URL. El texto opcional va debajo de la imagen.",
+    send_audio: "Manda un audio. Subí OGG, MP3 o M4A. Podés marcarlo como nota de voz.",
+    send_video: "Manda un video MP4. El texto opcional va debajo del video.",
+    wait_input: "El chat se pausa. Usalo si el cliente tiene que escribir. Si querés botones para tocar, usá el bloque Botones.",
+    wait_payment: "Espera la foto del comprobante. La salida típica es “Si manda una foto” hacia Guardar foto de pago.",
+    match_product: "Busca qué producto pidió. Unilo con “Si encontró el producto” y “Si no encontró el producto”.",
+    create_order: "Crea el pedido y manda el QR. Podés cobrar un adelanto y sumar envío.",
+    attach_proof: "Guarda la foto del pago. Después unilo a un mensaje de “recibido”.",
+    capture: "Guarda un dato (ciudad, tipo de reunión) para usarlo más adelante.",
+    schedule_fulfillment: "Pregunta si es envío, otra ciudad o reunión y pide día y hora.",
+    schedule_call: "Ofrece días y horarios de 30 minutos. Cada persona ocupa un turno; ese horario no se le ofrece a otra.",
+    order_status: "Responde cómo va el pedido abierto.",
+    cancel_order: "Cancela el pedido y libera el stock.",
+    ai_reply: "La IA contesta si no hay una opción clara. Es opcional.",
+    handoff: "El bot deja de hablar para que atienda una persona.",
+    end: "Termina y vuelve al Inicio en el próximo mensaje.",
   };
+
+  function typeLabel(type) {
+    return (NODE_META[type] && NODE_META[type].label) || type;
+  }
+
+  function triggerLabel(type) {
+    const hit = TRIGGERS.find((row) => row[0] === type);
+    return hit ? hit[1] : type || "Siempre";
+  }
+
+  function shortKey(key) {
+    const raw = String(key || "").trim();
+    if (!raw) return "";
+    const first = raw.split(",")[0].trim();
+    if (raw.length <= 28) return raw;
+    return first + (raw.includes(",") ? "…" : "");
+  }
+
+  function edgeCaption(edge) {
+    const kind = edge.trigger_type || "always";
+    const key = shortKey(edge.trigger_key);
+    if (kind === "always") return "siempre";
+    if (kind === "default") return "si no entendió";
+    if (kind === "keyword") {
+      const raw = String(edge.trigger_key || "").trim();
+      const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      const last = parts[parts.length - 1] || key;
+      if (/^opt\d+$/i.test(parts[0] || "")) return last ? "si toca “" + last + "”" : "si toca un botón";
+      return key ? "si dice “" + key + "”" : "si escribe…";
+    }
+    if (kind === "is_digit") return "si es un número";
+    if (kind === "is_image") return "si manda foto";
+    if (kind === "found") return "sí, hay producto";
+    if (kind === "not_found") return "no hay producto";
+    if (kind === "transition") return key ? "IA: " + key : "según la IA";
+    if (kind === "regex") return key ? "texto: " + key : "texto especial";
+    return triggerLabel(kind);
+  }
 
   let flow = null;
   let selectedId = null;
@@ -77,6 +143,15 @@
         meeting_link: "",
       };
     }
+    if (type === "schedule_call") {
+      return {
+        text: "¿Qué día te llamamos?",
+        start_hour: 9,
+        end_hour: 18,
+        days: 7,
+        interval_min: 30,
+      };
+    }
     if (type === "capture") return { var: "city", value: "" };
     if (type === "catalog") {
       return {
@@ -89,6 +164,19 @@
         cover_url: "",
         send_list: true,
       };
+    }
+    if (type === "buttons") {
+      return {
+        text: "¿Cómo lo recibís?",
+        buttons: [
+          { title: "Envío local", to: "" },
+          { title: "Otro departamento", to: "" },
+          { title: "Reunión / recojo", to: "" },
+        ],
+      };
+    }
+    if (type === "send_image" || type === "send_audio" || type === "send_video") {
+      return { url: "", caption: "", voice: false };
     }
     return {};
   }
@@ -113,7 +201,7 @@
 
   function nodeName(id) {
     const n = def().nodes.find((x) => x.id === id);
-    return n ? n.name || n.type : id;
+    return n ? n.name || typeLabel(n.type) : id;
   }
 
   function render() {
@@ -121,38 +209,70 @@
     nodesEl.innerHTML = "";
     d.nodes.forEach((node) => {
       const el = document.createElement("div");
-      el.className = "fs-node " + node.type + (node.id === selectedId ? " on" : "");
+      el.className =
+        "fs-node " +
+        node.type +
+        (node.id === selectedId ? " on" : "") +
+        (connectFrom === node.id ? " from" : "") +
+        (connectFrom && connectFrom !== node.id ? " drop" : "");
       el.style.left = node.x + "px";
       el.style.top = node.y + "px";
       el.dataset.id = node.id;
       el.innerHTML =
         '<div class="fs-type">' +
-        (node.type || "") +
+        escapeHtml(typeLabel(node.type)) +
         '</div><div class="fs-title"></div>' +
-        '<button type="button" class="fs-port in" data-port="in" title="Entrada"></button>' +
-        '<button type="button" class="fs-port out" data-port="out" title="Conectar"></button>';
-      el.querySelector(".fs-title").textContent = node.name || node.type;
+        '<button type="button" class="fs-port in" data-port="in" title="Acá llega la flecha"></button>' +
+        '<button type="button" class="fs-port out" data-port="out" title="Clic y después tocá el siguiente paso"></button>';
+      el.querySelector(".fs-title").textContent = node.name || typeLabel(node.type);
       el.querySelector(".fs-title").dataset.role = "title";
       el.addEventListener("mousedown", onNodeDown);
       el.querySelector(".fs-port.out").addEventListener("click", (ev) => {
         ev.stopPropagation();
-        connectFrom = node.id;
-        setMsg("Clic en el nodo destino para conectar");
+        startConnect(node.id);
       });
       el.querySelector(".fs-port.in").addEventListener("click", (ev) => {
         ev.stopPropagation();
-        if (connectFrom && connectFrom !== node.id) {
-          addEdge(connectFrom, node.id);
-          connectFrom = null;
-          setMsg("Conectado");
-          render();
-        }
+        finishConnect(node.id);
       });
       nodesEl.appendChild(el);
     });
     drawEdges();
     fillWire();
     renderInspector();
+    updateConnectBar();
+  }
+
+  function startConnect(id) {
+    connectFrom = id;
+    setMsg("Ahora tocá el siguiente paso (el bloque o el puntito de la izquierda).");
+    render();
+  }
+
+  function finishConnect(id) {
+    if (!connectFrom || connectFrom === id) return;
+    addEdge(connectFrom, id);
+    connectFrom = null;
+    setMsg("Unidos. A la derecha podés decir cuándo seguir (siempre, si escribe…). Guardá el flujo.");
+    render();
+  }
+
+  function cancelConnect() {
+    connectFrom = null;
+    setMsg("");
+    render();
+  }
+
+  function updateConnectBar() {
+    const bar = document.getElementById("fs-connect-bar");
+    const text = document.getElementById("fs-connect-text");
+    if (!bar) return;
+    if (!connectFrom) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+    if (text) text.textContent = "Uniendo desde «" + nodeName(connectFrom) + "». Tocá el siguiente paso.";
   }
 
   function drawEdges() {
@@ -168,13 +288,13 @@
       const dpath = `M ${a.x + NODE_W / 2} ${a.y} C ${a.x + NODE_W / 2 + dx} ${a.y}, ${b.x - NODE_W / 2 - dx} ${b.y}, ${b.x - NODE_W / 2} ${b.y}`;
       const labelX = (a.x + b.x) / 2;
       const labelY = (a.y + b.y) / 2 - 6;
-      const label = (edge.trigger_type || "always") + (edge.trigger_key ? ":" + edge.trigger_key : "");
+      const label = edgeCaption(edge);
       parts.push(
         `<path d="${dpath}" fill="none" stroke="#6b7c90" stroke-width="2" marker-end="url(#fs-arrow)"></path>`
       );
       parts.push(
-        `<text x="${labelX}" y="${labelY}" fill="#9aa7b8" font-size="10" text-anchor="middle">${escapeHtml(
-          label.slice(0, 42)
+        `<text x="${labelX}" y="${labelY}" fill="#e8edf5" font-size="11" text-anchor="middle" paint-order="stroke" stroke="#0f141b" stroke-width="4">${escapeHtml(
+          label.slice(0, 36)
         )}</text>`
       );
     });
@@ -188,10 +308,7 @@
     if (!node) return;
     selectedId = id;
     if (connectFrom && connectFrom !== id) {
-      addEdge(connectFrom, id);
-      connectFrom = null;
-      setMsg("Conectado");
-      render();
+      finishConnect(id);
       return;
     }
     drag = {
@@ -239,13 +356,19 @@
     def().nodes.push({
       id: uid("n_"),
       type,
-      name: type,
+      name: typeLabel(type),
       x: 40 + (wrap ? wrap.scrollLeft : 0) + (count % 4) * 28,
       y: 40 + (wrap ? wrap.scrollTop : 0) + (count % 5) * 24,
       config: defaultConfig(type),
     });
     selectedId = def().nodes[def().nodes.length - 1].id;
-    setMsg("Nodo agregado. Configuralo a la derecha y agregá una salida.");
+    setMsg(
+      type === "buttons"
+        ? "Bloque Botones: a la derecha escribí la pregunta, el texto de cada botón (máx. 3) y a qué paso va. Guardá el flujo."
+        : type === "send_image" || type === "send_audio" || type === "send_video"
+          ? "Subí el archivo a la derecha (o pegá una URL) y unilo al paso siguiente. Guardá el flujo."
+          : "Paso agregado. Unilo al anterior y, a la derecha, escribí qué dice o cuándo seguir."
+    );
     render();
     inspector.scrollIntoView({ block: "nearest" });
   }
@@ -256,7 +379,7 @@
     if (!fromEl || !toEl) return;
     const nodes = def().nodes;
     const opts = nodes
-      .map((n) => `<option value="${n.id}">${escapeHtml(n.name || n.type)}</option>`)
+      .map((n) => `<option value="${n.id}">${escapeHtml(n.name || typeLabel(n.type))}</option>`)
       .join("");
     const prevFrom = fromEl.value;
     const prevTo = toEl.value;
@@ -321,6 +444,235 @@
       <p><a href="/inventario" target="_blank">Abrir inventario</a></p>`;
   }
 
+  function mediaKind(type) {
+    if (type === "send_image") return "image";
+    if (type === "send_audio") return "audio";
+    if (type === "send_video") return "video";
+    return "";
+  }
+
+  function mediaHtml(node) {
+    const kind = mediaKind(node.type);
+    const url = node.config.url || "";
+    const accept = {
+      image: "image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp",
+      audio: "audio/ogg,audio/mpeg,audio/mp4,audio/aac,audio/amr,.ogg,.opus,.mp3,.m4a,.aac,.amr,.wav",
+      video: "video/mp4,video/3gpp,.mp4,.3gp",
+    }[kind] || "";
+    let preview = "";
+    if (url) {
+      if (kind === "image") {
+        preview = `<img class="fs-cover-prev" src="${escapeHtml(url)}" alt="">`;
+      } else if (kind === "audio") {
+        preview = `<audio class="fs-media-prev" controls src="${escapeHtml(url)}"></audio>`;
+      } else {
+        preview = `<video class="fs-media-prev" controls src="${escapeHtml(url)}"></video>`;
+      }
+    }
+    const caption =
+      kind === "audio"
+        ? ""
+        : `<label>Texto debajo (opcional)<br><textarea id="insp-caption" placeholder="Mirá esto"></textarea></label>`;
+    const voice =
+      kind === "audio"
+        ? `<label class="fs-check"><input type="checkbox" id="insp-voice"> Mandar como nota de voz</label>`
+        : "";
+    const hint = {
+      image: "JPG, PNG o WEBP. Máx. 5 MB.",
+      audio: "OGG, MP3 o M4A. Máx. 16 MB.",
+      video: "MP4. Máx. 16 MB.",
+    }[kind] || "";
+    return `<h2>Archivo</h2>
+      <label>Subir
+        <input type="file" id="insp-media-file" accept="${accept}">
+      </label>
+      <label>O pegar URL<br><input id="insp-media-url" placeholder="https://… o /uploads/…"></label>
+      ${preview || (url ? "" : `<p class="fs-warn">Todavía no hay archivo. Subilo o pegá una URL.</p>`)}
+      ${caption}
+      ${voice}
+      <p class="muted">${hint} Unilo al siguiente paso con “Siempre”.</p>`;
+  }
+
+  function bindMedia(node) {
+    const kind = mediaKind(node.type);
+    if (!kind) return;
+    const urlEl = inspector.querySelector("#insp-media-url");
+    if (urlEl) {
+      urlEl.value = node.config.url || "";
+      urlEl.addEventListener("input", (e) => {
+        node.config.url = e.target.value.trim();
+      });
+    }
+    const cap = inspector.querySelector("#insp-caption");
+    if (cap) {
+      cap.value = node.config.caption || "";
+      cap.addEventListener("input", (e) => {
+        node.config.caption = e.target.value;
+      });
+    }
+    const voice = inspector.querySelector("#insp-voice");
+    if (voice) {
+      voice.checked = Boolean(node.config.voice);
+      voice.addEventListener("change", () => {
+        node.config.voice = voice.checked;
+      });
+    }
+    const fileEl = inspector.querySelector("#insp-media-file");
+    if (fileEl) {
+      fileEl.addEventListener("change", async () => {
+        if (!fileEl.files[0]) return;
+        try {
+          setMsg("Subiendo archivo…");
+          const url = await uploadFile(fileEl.files[0], kind);
+          node.config.url = url;
+          setMsg("Archivo listo. Guardá el flujo.");
+          renderInspector();
+        } catch (err) {
+          setMsg(err.message || "Error al subir");
+        }
+      });
+    }
+  }
+
+  function nodeSelectOptions(others, selected) {
+    return (
+      `<option value="">Elegí el siguiente paso…</option>` +
+      others
+        .map(
+          (n) =>
+            `<option value="${n.id}"${n.id === selected ? " selected" : ""}>${escapeHtml(
+              n.name || typeLabel(n.type)
+            )}</option>`
+        )
+        .join("")
+    );
+  }
+
+  function buttonsHtml(node, others) {
+    const cfg = node.config || {};
+    let list = Array.isArray(cfg.buttons) ? cfg.buttons.slice(0, MAX_BUTTONS) : [];
+    if (!list.length) list = [{ title: "", to: "" }, { title: "", to: "" }];
+    const filled = list.filter((b) => b && String(b.title || "").trim()).length;
+    const many = filled > 3 || list.length > 3;
+    const limit = many ? 24 : 20;
+    const rows = list
+      .map((b, i) => {
+        const ph =
+          ["Envío local", "Otro departamento", "Reunión / recojo"][i] || "Opción " + (i + 1);
+        const del =
+          list.length > 1
+            ? `<button type="button" class="btn" data-btn-del="${i}" title="Quitar">x</button>`
+            : "";
+        return `<div class="fs-btn-row">
+        <div class="fs-btn-head"><strong>${many ? "Opción" : "Botón"} ${i + 1}</strong>${del}</div>
+        <label>Texto (máx. ${limit} letras)
+          <input data-btn-title="${i}" maxlength="${limit}" placeholder="${escapeHtml(ph)}">
+        </label>
+        <label>Si lo toca, ir a
+          <select data-btn-to="${i}">${nodeSelectOptions(others, b.to || "")}</select>
+        </label>
+      </div>`;
+      })
+      .join("");
+    const add =
+      list.length < MAX_BUTTONS
+        ? `<button type="button" class="btn" id="insp-add-btn">Agregar opción</button>`
+        : `<p class="muted">WhatsApp deja como máximo 10 opciones.</p>`;
+    const listBtn = many
+      ? `<label>Texto del menú (máx. 20 letras)<br><input id="insp-list-btn" maxlength="20" placeholder="Ver opciones"></label>`
+      : "";
+    const missing = !list.some((b) => b && String(b.title || "").trim() && b.to);
+    return `<h2>Opciones para tocar</h2>
+      <label>Pregunta (arriba)<br><textarea id="insp-text" placeholder="¿Cómo lo recibís?"></textarea></label>
+      <p class="muted">Hasta <strong>3</strong> salen como botones en el chat. Si agregás más, el cliente toca <strong>Ver opciones</strong> y elige de una lista (máx. 10). No hace falta que escriba 1, 2, 3.</p>
+      ${rows}
+      ${add}
+      ${listBtn}
+      <label>Guardar la elección como (opcional)<br><input id="insp-var" placeholder="choice"></label>
+      <p class="muted">Después podés usar {{choice}} en un mensaje.</p>
+      ${missing ? `<p class="fs-warn">Completá el texto y el siguiente paso de cada opción que quieras usar.</p>` : ""}`;
+  }
+
+  function syncButtonEdges(node) {
+    const titles = Array.from(inspector.querySelectorAll("[data-btn-title]"));
+    const many = titles.length > 3;
+    const limit = many ? 24 : 20;
+    const buttons = titles.map((titleEl, i) => {
+      const toEl = inspector.querySelector(`[data-btn-to="${i}"]`);
+      return {
+        title: (titleEl.value || "").trim().slice(0, limit),
+        to: toEl ? toEl.value : "",
+      };
+    });
+    node.config.buttons = buttons;
+    const listBtn = inspector.querySelector("#insp-list-btn");
+    if (listBtn) node.config.button = (listBtn.value || "").trim().slice(0, 20);
+    const keep = def().edges.filter((e) => {
+      if (e.from !== node.id) return true;
+      const key = String(e.trigger_key || "").trim();
+      return !/^opt\d+(,|$)/.test(key);
+    });
+    buttons.forEach((b, i) => {
+      if (!b.title || !b.to) return;
+      keep.push({
+        id: uid("e_"),
+        from: node.id,
+        to: b.to,
+        trigger_type: "keyword",
+        trigger_key: "opt" + (i + 1) + "," + (i + 1) + "," + b.title,
+      });
+    });
+    def().edges = keep;
+    drawEdges();
+    fillWire();
+  }
+
+  function bindButtons(node) {
+    if (node.type !== "buttons") return;
+    const titles = inspector.querySelectorAll("[data-btn-title]");
+    titles.forEach((titleEl, i) => {
+      const toEl = inspector.querySelector(`[data-btn-to="${i}"]`);
+      const b = (node.config.buttons || [])[i] || {};
+      titleEl.value = b.title || "";
+      if (toEl) toEl.value = b.to || "";
+      titleEl.addEventListener("input", () => {
+        syncButtonEdges(node);
+      });
+      if (toEl) {
+        toEl.addEventListener("change", () => {
+          syncButtonEdges(node);
+        });
+      }
+    });
+    const listBtn = inspector.querySelector("#insp-list-btn");
+    if (listBtn) {
+      listBtn.value = node.config.button || "Ver opciones";
+      listBtn.addEventListener("input", () => {
+        node.config.button = (listBtn.value || "").trim().slice(0, 20);
+      });
+    }
+    const add = inspector.querySelector("#insp-add-btn");
+    if (add) {
+      add.addEventListener("click", () => {
+        syncButtonEdges(node);
+        node.config.buttons = node.config.buttons || [];
+        if (node.config.buttons.length >= MAX_BUTTONS) return;
+        node.config.buttons.push({ title: "", to: "" });
+        renderInspector();
+      });
+    }
+    inspector.querySelectorAll("[data-btn-del]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        syncButtonEdges(node);
+        const i = Number(btn.dataset.btnDel);
+        (node.config.buttons || []).splice(i, 1);
+        if (!node.config.buttons.length) node.config.buttons.push({ title: "", to: "" });
+        renderInspector();
+      });
+    });
+    syncButtonEdges(node);
+  }
+
   function triggerOptions(selected) {
     return TRIGGERS.map(
       ([value, label]) =>
@@ -328,10 +680,11 @@
     ).join("");
   }
 
-  async function uploadFile(file) {
+  async function uploadFile(file, kind) {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch("/api/flujos/upload", { method: "POST", body: fd });
+    const q = kind ? "?kind=" + encodeURIComponent(kind) : "";
+    const res = await fetch("/api/flujos/upload" + q, { method: "POST", body: fd });
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || "No se pudo subir");
     return body.url;
@@ -442,76 +795,95 @@
   function renderInspector() {
     const node = def().nodes.find((n) => n.id === selectedId);
     if (!node) {
-      inspector.innerHTML = '<p class="muted">Seleccioná un nodo en el lienzo o agregá uno desde la paleta.</p>';
+      inspector.innerHTML = '<p class="muted">Elegí un paso en el mapa o agregá uno desde la izquierda.</p>';
       return;
     }
     node.config = node.config || {};
     const outs = def().edges.filter((e) => e.from === node.id);
     const others = def().nodes.filter((n) => n.id !== node.id);
-    let html = `<h2>Configurar nodo</h2>
-      <label>Nombre<br><input id="insp-name" value=""></label>
-      <p class="muted">Tipo: ${escapeHtml(node.type)}</p>
-      <p class="fs-help">${escapeHtml(NODE_HELP[node.type] || "Conectá salidas para definir qué pasa después.")}</p>`;
+    let html = `<h2>Este paso</h2>
+      <label>Nombre (como lo ves en el mapa)<br><input id="insp-name" value=""></label>
+      <p class="fs-kind">${escapeHtml(typeLabel(node.type))}</p>
+      <p class="fs-help">${escapeHtml(NODE_HELP[node.type] || "Unilo a otro paso para decir qué pasa después.")}</p>`;
     if (node.type === "message" || node.type === "handoff") {
-      html += `<label>Texto que envía<br><textarea id="insp-text"></textarea></label>
-        <p class="muted">Variables: {{product_name}} {{qty}} {{order_code}} {{total}} {{currency}}</p>`;
+      html += `<label>Qué escribe el bot<br><textarea id="insp-text" placeholder="Hola, ¿en qué te ayudo?"></textarea></label>
+        <p class="muted">Opcional: {{product_name}} {{qty}} {{order_code}} se rellenan solos.</p>`;
     }
     if (node.type === "ai_reply") {
-      html += `<label>Hint al motor<br><textarea id="insp-hint"></textarea></label>
-        <label>Fallback<br><input id="insp-fallback" value=""></label>
-        <label>Min. confianza<br><input id="insp-conf" type="number" min="0" max="1" step="0.05"></label>`;
+      html += `<label>Indicación para la IA<br><textarea id="insp-hint" placeholder="Ayudá a elegir un producto. No inventes precios."></textarea></label>
+        <label>Si no está segura, ir a<br><input id="insp-fallback" value=""></label>
+        <label>Qué tan segura tiene que estar (0 a 1)<br><input id="insp-conf" type="number" min="0" max="1" step="0.05"></label>`;
     }
     if (node.type === "catalog") {
       html += catalogHtml(node);
     }
+    if (mediaKind(node.type)) {
+      html += mediaHtml(node);
+    }
     if (node.type === "create_order") {
       html += `<label>Adelanto %<br><input id="insp-deposit" type="number" min="1" max="100"></label>
-        <label>Envío local (BOB)<br><input id="insp-ship-local"></label>
-        <label>Envío otro departamento (BOB)<br><input id="insp-ship-int"></label>
-        <label class="fs-check"><input type="checkbox" id="insp-skip-sched"> Ya agendé antes del QR</label>`;
+        <label>Envío en la ciudad (BOB)<br><input id="insp-ship-local"></label>
+        <label>Envío a otra ciudad (BOB)<br><input id="insp-ship-int"></label>
+        <label class="fs-check"><input type="checkbox" id="insp-skip-sched"> Ya pedí fecha/hora antes del QR</label>`;
     }
     if (node.type === "schedule_fulfillment") {
-      html += `<label>Modos (delivery,shipping,meeting)<br><input id="insp-modes"></label>
-        <label>Dirección oficina<br><textarea id="insp-office"></textarea></label>
-        <label>Link reunión virtual<br><input id="insp-link"></label>`;
+      html += `<label>Qué ofrecer (separado por coma)<br><input id="insp-modes" placeholder="delivery,shipping,meeting"></label>
+        <p class="muted">delivery = domicilio · shipping = otra ciudad · meeting = reunión</p>
+        <label>Dirección de la oficina<br><textarea id="insp-office"></textarea></label>
+        <label>Link de la reunión virtual<br><input id="insp-link" placeholder="https://meet.google.com/…"></label>`;
+    }
+    if (node.type === "schedule_call") {
+      html += `<label>Pregunta<br><textarea id="insp-text" placeholder="¿Qué día te llamamos?"></textarea></label>
+        <label>Desde (hora)<br><input id="insp-call-start" type="number" min="0" max="23"></label>
+        <label>Hasta (hora)<br><input id="insp-call-end" type="number" min="1" max="24"></label>
+        <label>Días a ofrecer<br><input id="insp-call-days" type="number" min="1" max="14"></label>
+        <label>Minutos por persona<br><input id="insp-call-interval" type="number" min="15" max="60" step="15"></label>
+        <p class="muted">Un turno por persona. Si alguien toma las 10:00, el siguiente libre es 10:30. Aparece en Agenda como Llamada.</p>`;
     }
     if (node.type === "capture") {
-      html += `<label>Variable<br><input id="insp-var"></label>
-        <label>Valor fijo (vacío = último mensaje)<br><input id="insp-value"></label>`;
+      html += `<label>Nombre del dato (ej. city)<br><input id="insp-var"></label>
+        <label>Valor fijo (vacío = lo que acaba de escribir)<br><input id="insp-value" placeholder="presencial"></label>`;
     }
-    html += `<h2>Salidas</h2>
-      <p class="muted">Una salida es “si pasa esto, ir a este nodo”.</p>`;
-    if (!outs.length) {
-      html += `<p class="fs-warn">Este nodo no tiene salidas. Sin eso el flujo se corta acá.</p>`;
-    }
-    outs.forEach((edge) => {
-      html += `<div class="fs-edge-row">
-        <select data-edge="${edge.id}" data-field="trigger_type">${triggerOptions(edge.trigger_type)}</select>
-        <input data-edge="${edge.id}" data-field="trigger_key" placeholder="palabras / clave" value="">
-        <button type="button" class="btn" data-del-edge="${edge.id}">x</button>
-      </div>
-      <p class="muted">→ ${escapeHtml(nodeName(edge.to))}</p>`;
-    });
-    html += `<div class="fs-add-edge">
-      <label>Conectar con<br>
+    if (node.type === "buttons") {
+      html += buttonsHtml(node, others);
+    } else {
+      html += `<h2>Qué pasa después</h2>
+      <p class="muted">Cada flecha es: “si pasa esto, ir a este paso”.</p>`;
+      if (!outs.length) {
+        html += `<p class="fs-warn">Este paso no tiene siguiente. Sin flecha el chat se corta acá.</p>`;
+      }
+      outs.forEach((edge) => {
+        html += `<div class="fs-edge-card">
+        <div class="fs-edge-row">
+          <select data-edge="${edge.id}" data-field="trigger_type">${triggerOptions(edge.trigger_type)}</select>
+          <input data-edge="${edge.id}" data-field="trigger_key" placeholder="ej. catálogo, 1" value="">
+          <button type="button" class="btn" data-del-edge="${edge.id}" title="Quitar esta flecha">x</button>
+        </div>
+        <p class="muted">Va a <strong>${escapeHtml(nodeName(edge.to))}</strong></p>
+      </div>`;
+      });
+      html += `<div class="fs-add-edge">
+      <p class="fs-add-title">Nueva flecha</p>
+      <label>Ir a este paso<br>
         <select id="insp-to">
-          <option value="">Elegí un nodo…</option>
+          <option value="">Elegí…</option>
           ${others
-            .map((n) => `<option value="${n.id}">${escapeHtml(n.name || n.type)}</option>`)
+            .map((n) => `<option value="${n.id}">${escapeHtml(n.name || typeLabel(n.type))}</option>`)
             .join("")}
         </select>
       </label>
-      <label>Cuando<br><select id="insp-trig">${triggerOptions("always")}</select></label>
-      <label>Palabras / clave<br><input id="insp-key" placeholder="hola,menu  ·  o buy"></label>
-      <button type="button" class="btn primary" id="insp-link">Agregar salida</button>
-    </div>
-    <button type="button" class="btn danger" id="insp-del">Eliminar nodo</button>`;
+      <label>Seguir cuando<br><select id="insp-trig">${triggerOptions("always")}</select></label>
+      <label>Si son palabras, escribílas acá<br><input id="insp-key" placeholder="hola, catálogo, 1"></label>
+      <button type="button" class="btn primary" id="insp-add-edge">Agregar flecha</button>
+    </div>`;
+    }
+    html += `<button type="button" class="btn danger" id="insp-del">Eliminar este paso</button>`;
     inspector.innerHTML = html;
     inspector.querySelector("#insp-name").value = node.name || "";
     inspector.querySelector("#insp-name").addEventListener("input", (e) => {
       node.name = e.target.value;
       const title = nodesEl.querySelector('[data-id="' + node.id + '"] .fs-title');
-      if (title) title.textContent = node.name || node.type;
+      if (title) title.textContent = node.name || typeLabel(node.type);
     });
     const textEl = inspector.querySelector("#insp-text");
     if (textEl) {
@@ -521,6 +893,8 @@
       });
     }
     bindCatalog(node);
+    bindButtons(node);
+    bindMedia(node);
     const dep = inspector.querySelector("#insp-deposit");
     if (dep) {
       dep.value = node.config.deposit_percent ?? 50;
@@ -568,6 +942,34 @@
       meet.value = node.config.meeting_link || "";
       meet.addEventListener("input", (e) => {
         node.config.meeting_link = e.target.value;
+      });
+    }
+    const callStart = inspector.querySelector("#insp-call-start");
+    if (callStart) {
+      callStart.value = node.config.start_hour ?? 9;
+      callStart.addEventListener("input", (e) => {
+        node.config.start_hour = Number(e.target.value);
+      });
+    }
+    const callEnd = inspector.querySelector("#insp-call-end");
+    if (callEnd) {
+      callEnd.value = node.config.end_hour ?? 18;
+      callEnd.addEventListener("input", (e) => {
+        node.config.end_hour = Number(e.target.value);
+      });
+    }
+    const callDays = inspector.querySelector("#insp-call-days");
+    if (callDays) {
+      callDays.value = node.config.days ?? 7;
+      callDays.addEventListener("input", (e) => {
+        node.config.days = Number(e.target.value);
+      });
+    }
+    const callInt = inspector.querySelector("#insp-call-interval");
+    if (callInt) {
+      callInt.value = node.config.interval_min ?? 30;
+      callInt.addEventListener("input", (e) => {
+        node.config.interval_min = Number(e.target.value);
       });
     }
     const vname = inspector.querySelector("#insp-var");
@@ -624,10 +1026,12 @@
         render();
       });
     });
-    inspector.querySelector("#insp-link").addEventListener("click", () => {
+    const linkBtn = inspector.querySelector("#insp-add-edge");
+    if (linkBtn) {
+      linkBtn.addEventListener("click", () => {
       const to = inspector.querySelector("#insp-to").value;
       if (!to) {
-        setMsg("Elegí a qué nodo conectar");
+        setMsg("Elegí a qué paso va la flecha");
         return;
       }
       addEdge(
@@ -636,9 +1040,10 @@
         inspector.querySelector("#insp-trig").value,
         inspector.querySelector("#insp-key").value.trim()
       );
-      setMsg("Salida agregada. Guardá el flujo.");
+      setMsg("Flecha agregada. Guardá el flujo.");
       render();
-    });
+      });
+    }
     inspector.querySelector("#insp-del").addEventListener("click", () => {
       def().nodes = def().nodes.filter((n) => n.id !== node.id);
       def().edges = def().edges.filter((e) => e.from !== node.id && e.to !== node.id);
@@ -738,6 +1143,11 @@
   document.querySelectorAll(".fs-pal-item").forEach((btn) => {
     btn.addEventListener("click", () => addNode(btn.dataset.type));
   });
+  const cancelConnectBtn = document.getElementById("fs-connect-cancel");
+  if (cancelConnectBtn) cancelConnectBtn.addEventListener("click", cancelConnect);
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && connectFrom) cancelConnect();
+  });
   document.getElementById("fs-save").addEventListener("click", save);
   const pub = document.getElementById("fs-publish");
   if (pub) pub.addEventListener("click", publish);
@@ -756,7 +1166,7 @@
       const from = document.getElementById("wire-from").value;
       const to = document.getElementById("wire-to").value;
       if (!from || !to || from === to) {
-        setMsg("Elegí dos nodos distintos");
+        setMsg("Elegí dos pasos distintos");
         return;
       }
       addEdge(
@@ -766,7 +1176,7 @@
         document.getElementById("wire-key").value.trim()
       );
       selectedId = from;
-      setMsg("Conectado. Guardá el flujo.");
+      setMsg("Unidos. Guardá el flujo.");
       render();
     });
   }

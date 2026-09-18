@@ -20,24 +20,119 @@ NODE_TYPES = (
     "end",
     "capture",
     "schedule_fulfillment",
+    "schedule_call",
+    "buttons",
+    "send_image",
+    "send_audio",
+    "send_video",
 )
 
 PALETTE = [
-    {"type": "start", "label": "Inicio", "hint": "Entrada del chat"},
-    {"type": "message", "label": "Mensaje", "hint": "Texto fijo"},
-    {"type": "catalog", "label": "Catálogo", "hint": "Lista productos"},
-    {"type": "wait_input", "label": "Esperar texto", "hint": "Pausa hasta el cliente"},
-    {"type": "match_product", "label": "Elegir producto", "hint": "Número o nombre"},
-    {"type": "schedule_fulfillment", "label": "Agendar envío", "hint": "Local, interior o reunión"},
-    {"type": "create_order", "label": "Pedido + QR", "hint": "Adelanto y envío"},
-    {"type": "wait_payment", "label": "Esperar pago", "hint": "Comprobante o texto"},
-    {"type": "attach_proof", "label": "Guardar comprobante", "hint": "Adjunta imagen"},
-    {"type": "capture", "label": "Guardar dato", "hint": "Ciudad, tipo de reunión…"},
-    {"type": "order_status", "label": "Estado pedido", "hint": "Consulta abierta"},
-    {"type": "cancel_order", "label": "Cancelar pedido", "hint": "Libera reserva"},
-    {"type": "ai_reply", "label": "IA", "hint": "Llama al motor-ia"},
-    {"type": "handoff", "label": "Humano", "hint": "Pausa el bot"},
-    {"type": "end", "label": "Fin", "hint": "Reinicia el flujo"},
+    {"type": "start", "label": "Inicio", "hint": "Acá empieza el chat", "group": "Básico"},
+    {
+        "type": "end",
+        "label": "Terminar",
+        "hint": "Vuelve al inicio",
+        "group": "Básico",
+    },
+    {"type": "message", "label": "Mensaje", "hint": "El bot escribe un texto", "group": "El bot envía"},
+    {
+        "type": "send_image",
+        "label": "Imagen",
+        "hint": "Manda una foto",
+        "group": "El bot envía",
+    },
+    {
+        "type": "send_audio",
+        "label": "Audio",
+        "hint": "Manda un audio o nota de voz",
+        "group": "El bot envía",
+    },
+    {
+        "type": "send_video",
+        "label": "Video",
+        "hint": "Manda un video",
+        "group": "El bot envía",
+    },
+    {
+        "type": "buttons",
+        "label": "Botones",
+        "hint": "Opciones para tocar (hasta 10; más de 3 salen como menú)",
+        "group": "El bot envía",
+    },
+    {"type": "catalog", "label": "Catálogo", "hint": "Muestra productos y fotos", "group": "El bot envía"},
+    {
+        "type": "wait_input",
+        "label": "Esperar respuesta",
+        "hint": "Espera lo que escriba, elija o mande el cliente",
+        "group": "Espera al cliente",
+    },
+    {
+        "type": "wait_payment",
+        "label": "Esperar foto de pago",
+        "hint": "Espera el comprobante",
+        "group": "Espera al cliente",
+    },
+    {
+        "type": "match_product",
+        "label": "Buscar producto",
+        "hint": "Entiende el número o el nombre",
+        "group": "Venta",
+    },
+    {
+        "type": "schedule_fulfillment",
+        "label": "Agendar entrega o reunión",
+        "hint": "Día, hora, domicilio o Meet",
+        "group": "Venta",
+    },
+    {
+        "type": "schedule_call",
+        "label": "Agendar llamada",
+        "hint": "Turnos de 30 min, uno por persona",
+        "group": "Venta",
+    },
+    {
+        "type": "create_order",
+        "label": "Crear pedido y QR",
+        "hint": "Arma el pedido y manda a pagar",
+        "group": "Venta",
+    },
+    {
+        "type": "attach_proof",
+        "label": "Guardar foto de pago",
+        "hint": "Guarda el comprobante",
+        "group": "Venta",
+    },
+    {
+        "type": "capture",
+        "label": "Guardar lo que dijo",
+        "hint": "Ej. ciudad o tipo de reunión",
+        "group": "Venta",
+    },
+    {
+        "type": "order_status",
+        "label": "Estado del pedido",
+        "hint": "Responde cómo va el pedido",
+        "group": "Venta",
+    },
+    {
+        "type": "cancel_order",
+        "label": "Cancelar pedido",
+        "hint": "Anula y libera stock",
+        "group": "Venta",
+    },
+    {
+        "type": "ai_reply",
+        "label": "Responder con IA",
+        "hint": "Contesta si no hay opción clara",
+        "group": "Otros",
+    },
+    {
+        "type": "handoff",
+        "label": "Pasar a una persona",
+        "hint": "El bot se calla y atiende un vendedor",
+        "group": "Otros",
+    },
 ]
 
 TRIGGER_TYPES = (
@@ -56,6 +151,9 @@ AUTO_TYPES = {
     "start",
     "message",
     "catalog",
+    "send_image",
+    "send_audio",
+    "send_video",
     "match_product",
     "create_order",
     "attach_proof",
@@ -67,7 +165,7 @@ AUTO_TYPES = {
     "capture",
 }
 
-WAIT_TYPES = {"wait_input", "wait_payment", "schedule_fulfillment"}
+WAIT_TYPES = {"wait_input", "wait_payment", "schedule_fulfillment", "schedule_call", "buttons"}
 
 
 def empty_definition() -> dict[str, Any]:

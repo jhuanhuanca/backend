@@ -75,7 +75,21 @@ async def build_items(db: AsyncSession) -> list[dict]:
     return items
 
 
-def _local_upload_path(url: str) -> Path | None:
+def public_media_url(url: str) -> str:
+    raw = (url or "").strip()
+    if raw.startswith("https://"):
+        return raw
+    base = (settings.public_base_url or "").rstrip("/")
+    if raw.startswith("/uploads/") and base.startswith("https://"):
+        return f"{base}{raw}"
+    return ""
+
+
+def _public_image_url(url: str) -> str:
+    return public_media_url(url)
+
+
+def local_upload_path(url: str) -> Path | None:
     raw = (url or "").strip()
     if not raw.startswith("/uploads/"):
         return None
@@ -87,17 +101,21 @@ def _local_upload_path(url: str) -> Path | None:
     return path if path.is_file() else None
 
 
+def _local_upload_path(url: str) -> Path | None:
+    return local_upload_path(url)
+
+
 async def _send_catalog_image(db: AsyncSession, phone: str, url: str, caption: str) -> None:
     link = (url or "").strip()
     try:
-        if link.startswith("https://"):
-            await whatsapp.send_image_link(phone, link, caption, db=db)
-            return
         local = _local_upload_path(link)
-        if not local:
+        if local:
+            sent = await whatsapp.send_image(phone, local, caption, db=db)
+            await inbox.record_bot_image(db, phone, local, caption, sent)
             return
-        sent = await whatsapp.send_image(phone, local, caption, db=db)
-        await inbox.record_bot_image(db, phone, local, caption, sent)
+        public = _public_image_url(link)
+        if public:
+            await whatsapp.send_image_link(phone, public, caption, db=db)
     except CloudError:
         return
 
@@ -195,7 +213,7 @@ async def present_catalog(
             if shown >= image_count:
                 break
             image = item["image"]
-            if not (image.startswith("https://") or _local_upload_path(image)):
+            if not (_local_upload_path(image) or _public_image_url(image)):
                 continue
             caption = f"{item['n']}. {item['name']} — {item['price']} {item['currency']}"
             await _send_catalog_image(db, phone, image, caption)
@@ -226,7 +244,7 @@ async def present_product(db: AsyncSession, phone: str, product: Product, stock:
         preview=product.name,
     )
     image = payload["image"]
-    if image.startswith("https://") or _local_upload_path(image):
+    if _local_upload_path(image) or _public_image_url(image):
         await _send_catalog_image(db, phone, image, text)
     else:
         try:
@@ -283,7 +301,7 @@ async def present_choices(
                 if item.get("id") and item.get("title")
             ]
             await whatsapp.send_interactive_list(
-                phone, body=text, button=button[:20], rows=rows, db=db
+                phone, body=text, button=button[:20], rows=rows, section="Opciones", db=db
             )
         return []
     except CloudError:

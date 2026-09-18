@@ -5,7 +5,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import BotFlow, Company, Product, WhatsAppAccount
+from app.models import BotFlow, Company, Product, User, WhatsAppAccount
+from app.services.auth import ROLE_SUPERADMIN, hash_password
 from app.services.flow_definition import (
     default_sale_definition,
     leads_catalog_definition,
@@ -148,6 +149,33 @@ async def seed_if_empty(db: AsyncSession) -> None:
             tagged = True
     if tagged:
         await db.commit()
+    if company:
+        flow_orphans = list(await db.scalars(select(BotFlow).where(BotFlow.company_id.is_(None))))
+        for flow in flow_orphans:
+            flow.company_id = company.id
+        if flow_orphans:
+            await db.commit()
+    await ensure_admin_user(db, company.id if company else None)
+
+
+async def ensure_admin_user(db: AsyncSession, company_id: str | None) -> None:
+    exists = await db.scalar(select(User.id).limit(1))
+    if exists:
+        return
+    settings = get_settings()
+    username = (settings.dashboard_user or "admin").strip() or "admin"
+    password = settings.dashboard_password or "admin"
+    db.add(
+        User(
+            username=username,
+            password_hash=hash_password(password),
+            role=ROLE_SUPERADMIN,
+            company_id=company_id,
+            is_active=True,
+            totp_enabled=False,
+        )
+    )
+    await db.commit()
 
 
 SAMPLE_FLOWS = (

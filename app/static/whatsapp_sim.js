@@ -60,6 +60,8 @@
         media = `<audio controls preload="metadata" src="${escapeHtml(m.media_url)}"></audio>`;
       } else if (m.msg_type === "video") {
         media = `<video controls preload="metadata" src="${escapeHtml(m.media_url)}"></video>`;
+      } else if (m.msg_type === "document") {
+        media = `<a class="sim-file" href="${escapeHtml(m.media_url)}" target="_blank" rel="noopener">📎 Archivo</a>`;
       } else {
         media = `<img class="sim-img" src="${escapeHtml(m.media_url)}" alt="">`;
       }
@@ -230,8 +232,17 @@
     }
   }
 
+  const fileEl = document.getElementById("sim-file");
+  const attachBtn = document.getElementById("sim-attach");
+  const micBtn = document.getElementById("sim-mic");
+
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
+    const pending = fileEl && fileEl.files && fileEl.files[0];
+    if (pending) {
+      sendFile(pending);
+      return;
+    }
     send(textEl.value);
   });
   document.getElementById("sim-chips").addEventListener("click", (ev) => {
@@ -244,9 +255,6 @@
     if (!btn) return;
     send(btn.dataset.chip);
   });
-  const fileEl = document.getElementById("sim-file");
-  const attachBtn = document.getElementById("sim-attach");
-  const micBtn = document.getElementById("sim-mic");
   attachBtn?.addEventListener("click", () => fileEl?.click());
   fileEl?.addEventListener("change", () => {
     const file = fileEl.files && fileEl.files[0];
@@ -260,21 +268,25 @@
     sendBtn.disabled = true;
     if (presenceEl) presenceEl.textContent = "enviando…";
     try {
-      await sleep(400);
+      await sleep(250);
       const fd = new FormData();
       fd.append("phone", phone());
       fd.append("name", nameEl.value || "Cliente de prueba");
       fd.append("text", (textEl.value || "").trim());
-      fd.append("media", file);
+      fd.append("media", file, file.name || "archivo");
       const res = await fetch("/whatsapp/simulador/media", { method: "POST", body: fd });
       if (res.status === 401) {
         window.location.href = "/login";
         return;
       }
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = data.detail || data.message || "No se pudo enviar el archivo";
+        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+      }
       bootData = data;
       textEl.value = "";
+      if (fileEl) fileEl.value = "";
       render(data);
     } catch (err) {
       msgsEl.insertAdjacentHTML(
@@ -300,7 +312,10 @@
       recorder.stop();
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      if (presenceEl) presenceEl.textContent = "sin micrófono";
+      return;
+    }
     const mime = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"].find(
       (type) => window.MediaRecorder && MediaRecorder.isTypeSupported(type)
     );
@@ -308,6 +323,7 @@
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      if (presenceEl) presenceEl.textContent = "micrófono bloqueado";
       return;
     }
     const chunks = [];

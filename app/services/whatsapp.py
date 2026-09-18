@@ -21,6 +21,7 @@ from app.services.secrets import decrypt_secret, encrypt_secret, mask_secret
 settings = get_settings()
 _E164 = re.compile(r"[^\d]")
 _skip_cloud = contextvars.ContextVar("wa_skip_cloud", default=False)
+_active_creds = contextvars.ContextVar("wa_active_creds", default=None)
 
 
 def cloud_skipped() -> bool:
@@ -35,6 +36,16 @@ def skip_cloud_send():
         yield
     finally:
         _skip_cloud.reset(token)
+
+
+@contextmanager
+def use_creds(creds: Creds | None):
+    """Usa las credenciales del webhook (el mismo número que recibió el mensaje)."""
+    token = _active_creds.set(creds)
+    try:
+        yield
+    finally:
+        _active_creds.reset(token)
 
 
 @dataclass
@@ -145,6 +156,9 @@ async def get_account_for_company(db: AsyncSession, company: Company) -> WhatsAp
 
 
 async def load_creds(db: AsyncSession | None = None, company_id: str | None = None) -> Creds:
+    pinned = _active_creds.get()
+    if pinned and pinned.ready:
+        return pinned
     close = False
     session = db
     if session is None:
@@ -410,6 +424,24 @@ async def _post_cloud(
         return _parse_graph_response(response, creds.phone_number_id)
 
 
+async def send_media_link(
+    to: str,
+    url: str,
+    *,
+    kind: str = "image",
+    caption: str = "",
+    db: AsyncSession | None = None,
+    creds: Creds | None = None,
+) -> dict | None:
+    send_kind = kind if kind in {"image", "video", "audio", "document"} else "document"
+    blob: dict = {"link": url}
+    if send_kind in {"image", "video", "document"} and caption:
+        blob["caption"] = caption[:1024]
+    if _skip_cloud.get():
+        return {"skipped": True, "to": to, "kind": send_kind, "url": url}
+    return await _post_cloud(to, {"type": send_kind, send_kind: blob}, db=db, creds=creds)
+
+
 async def send_image_link(
     to: str,
     url: str,
@@ -417,10 +449,7 @@ async def send_image_link(
     db: AsyncSession | None = None,
     creds: Creds | None = None,
 ) -> dict | None:
-    image: dict = {"link": url}
-    if caption:
-        image["caption"] = caption[:1024]
-    return await _post_cloud(to, {"type": "image", "image": image}, db=db, creds=creds)
+    return await send_media_link(to, url, kind="image", caption=caption, db=db, creds=creds)
 
 
 async def send_interactive_list(
@@ -430,6 +459,7 @@ async def send_interactive_list(
     button: str,
     rows: list[dict],
     header: str = "",
+    section: str = "Productos",
     db: AsyncSession | None = None,
     creds: Creds | None = None,
 ) -> dict | None:
@@ -438,7 +468,7 @@ async def send_interactive_list(
         "body": {"text": (body or "Catálogo")[:1024]},
         "action": {
             "button": (button or "Ver")[:20],
-            "sections": [{"title": "Productos", "rows": rows[:10]}],
+            "sections": [{"title": (section or "Opciones")[:24], "rows": rows[:10]}],
         },
     }
     if header:

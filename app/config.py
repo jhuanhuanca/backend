@@ -10,6 +10,7 @@ QR_DIR = UPLOADS_DIR / "qr"
 PROOFS_DIR = UPLOADS_DIR / "proofs"
 MEDIA_DIR = UPLOADS_DIR / "whatsapp"
 CATALOG_DIR = UPLOADS_DIR / "catalog"
+FLOW_DIR = UPLOADS_DIR / "flow"
 PAY_DIR = UPLOADS_DIR / "pay"
 
 
@@ -68,5 +69,6 @@ def get_settings() -> Settings:
     PROOFS_DIR.mkdir(parents=True, exist_ok=True)
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     CATALOG_DIR.mkdir(parents=True, exist_ok=True)
+    FLOW_DIR.mkdir(parents=True, exist_ok=True)
     PAY_DIR.mkdir(parents=True, exist_ok=True)
     return Settings()

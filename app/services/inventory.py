@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
 from app.models import InventoryReservation, OrderItem, Product, ProductVariant, utcnow
+from app.services import tenancy
 
 settings = get_settings()
 
@@ -57,14 +58,20 @@ async def available_stock(db: AsyncSession, product_id: str, variant_id: str | N
     return max(0, physical - reserved)
 
 
-async def list_catalog(db: AsyncSession) -> list[Product]:
+async def list_catalog(db: AsyncSession, company_id: str | None = None) -> list[Product]:
     await expire_reservations(db)
-    result = await db.scalars(
+    cid = company_id or tenancy.current_company_id()
+    if not cid:
+        cid = await tenancy.resolve_company_id(db)
+    query = (
         select(Product)
         .where(Product.active.is_(True))
         .options(selectinload(Product.variants))
         .order_by(Product.name)
     )
+    if cid:
+        query = query.where(Product.company_id == cid)
+    result = await db.scalars(query)
     return list(result)
 
 

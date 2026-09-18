@@ -53,6 +53,7 @@
     </table>
     <p style="margin-top:10px"><a class="btn" href="/agenda">Ver agenda</a></p>
   </section>
+  {% if request.session.get("role") == "superadmin" %}
   <section class="panel" style="margin-top:16px">
     <h2>Dispositivos / live</h2>
     {% if not devices %}<p class="muted">Abrí Android Control Center con el backend en marcha para sincronizar la granja.</p>{% endif %}
@@ -66,6 +67,7 @@
       {% if live %}<div class="urlbox">{{ live.capture_url }}</div>{% endif %}
     {% endfor %}
   </section>
+  {% endif %}
   </div>
 </div>
 {% endblock %}

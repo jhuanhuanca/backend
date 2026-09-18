@@ -203,8 +203,17 @@
   padding: 8px;
   background: #f0f2f5;
   border-radius: 0 0 24px 24px;
+  position: relative;
 }
-.sim-compose input {
+.sim-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.sim-compose input#sim-text {
   flex: 1;
   border: 0;
   background: #fff;

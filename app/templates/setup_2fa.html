@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}2FA · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>Verificación en dos pasos</h1>
+{% if already %}
+  <p class="badge pagado">2FA activo en tu usuario.</p>
+  <p class="muted">Cada vez que entres, y al crear clientes, vas a necesitar el código de la app.</p>
+  <p><a class="btn" href="/clientes">Ir a clientes</a></p>
+{% else %}
+  <p>Escaneá este QR con <strong>Google Authenticator</strong> o <strong>Authy</strong>. Sin esto no se pueden crear logins de clientes.</p>
+  {% if error %}<p class="badge cancelado">{{ error }}</p>{% endif %}
+  {% if qr %}
+    <p><img src="{{ qr }}" alt="QR 2FA" width="180" height="180" style="background:#fff;padding:8px;border-radius:8px"></p>
+  {% endif %}
+  <form method="post" class="stack" style="max-width:320px">
+    <label>Código de 6 dígitos
+      <input name="code" inputmode="numeric" maxlength="8" autocomplete="one-time-code" required>
+    </label>
+    <button class="btn primary" type="submit">Activar 2FA</button>
+  </form>
+{% endif %}
+{% endblock %}

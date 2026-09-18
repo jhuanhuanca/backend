@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
-  <link rel="stylesheet" href="/static/app.css?v=3">
+  <link rel="stylesheet" href="/static/app.css?v=6">
 </head>
 <body class="{% block body_class %}{% endblock %}">
   {% if user %}
   <header class="app">
-    <div class="brand">{{ app_name }}</div>
+    <div class="brand">{{ app_name }}{% if request.session.get("company_name") %} <span class="muted" style="font-weight:400;font-size:13px">· {{ request.session.get("company_name") }}</span>{% endif %}</div>
     <nav>
       <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Inicio</a>
       <a href="/pedidos" class="{% if request.url.path.startswith('/pedidos') %}active{% endif %}">Pedidos</a>
@@ -20,7 +20,10 @@
       <a href="/whatsapp/simulador" class="{% if request.url.path.startswith('/whatsapp/simulador') %}active{% endif %}">Simulador</a>
       <a href="/flujos" class="{% if request.url.path.startswith('/flujos') %}active{% endif %}">Flujos</a>
       <a href="/tienda" class="{% if request.url.path.startswith('/tienda') %}active{% endif %}">Tienda</a>
+      {% if request.session.get("role") == "superadmin" %}
+      <a href="/clientes" class="{% if request.url.path.startswith('/clientes') or request.url.path.startswith('/seguridad') %}active{% endif %}">Clientes</a>
       <a href="/dispositivos" class="{% if request.url.path.startswith('/dispositivos') %}active{% endif %}">Granja</a>
+      {% endif %}
     </nav>
     <form action="/logout" method="post"><button class="btn" type="submit">Salir</button></form>
   </header>

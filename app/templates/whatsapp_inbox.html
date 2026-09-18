@@ -6,7 +6,11 @@
 <div class="wa-page-head">
   <h1>WhatsApp Hub</h1>
   {% if not active %}
+  {% if request.session.get("role") == "superadmin" %}
   <p class="muted">Cada empresa pega acá sus credenciales de <strong>WhatsApp Cloud API</strong> (Meta). El token se cifra en la base y no se vuelve a mostrar entero.</p>
+  {% else %}
+  <p class="muted">Tu WhatsApp lo configura el administrador. Acá ves el estado y los chats de tu empresa.</p>
+  {% endif %}
   <p><a class="btn primary" href="/whatsapp/simulador">Probar el chatbot (simulador)</a></p>
   {% endif %}
   {% if flash_ok == "guardado" %}
@@ -38,6 +42,7 @@
     {% endif %}
   </p>
 
+  {% if request.session.get("role") == "superadmin" %}
   {% if companies|length > 1 %}
   <form method="post" action="/whatsapp/empresa" class="inline" style="margin-bottom:12px">
     <label>Empresa activa<br>
@@ -87,6 +92,7 @@
       <button class="btn primary" type="submit">Guardar credenciales</button>
     </div>
   </form>
+  {% endif %}
 
   <p class="muted">Webhook para Meta (HTTPS en producción):</p>
   <p class="code urlbox">{{ connection.webhook_url }}</p>
@@ -108,13 +114,15 @@
     {% endif %}
   {% endif %}
 
+  {% if request.session.get("role") == "superadmin" %}
   <form method="post" action="/whatsapp/empresa/nueva" class="inline" style="margin-top:16px">
-    <label>Otra empresa (SaaS)<br>
+    <label>Otra empresa<br>
       <input name="name" placeholder="Nombre del vendedor / tienda" required>
     </label>
     <button class="btn" type="submit">Agregar empresa</button>
   </form>
-  <p class="muted">Cada empresa tiene su propio token. El login separado por vendedor viene después; hoy el admin elige la empresa activa.</p>
+  <p class="muted">Para dar usuario y clave a un cliente usá <a href="/clientes">Clientes</a> (con 2FA).</p>
+  {% endif %}
 </details>
 
 <div class="wa-layout">
@@ -135,29 +143,56 @@
       <header class="wa-head">{{ active }}</header>
       <div class="wa-msgs">
         {% for m in messages %}
-          <div class="wa-bubble {{ m.direction }} {{ m.source }}">
+          <div class="wa-bubble {{ m.direction }} {{ m.source }} {% if m.rich %}wa-wide{% endif %}">
             <div class="wa-meta">{{ m.source }} · {{ m.created_at }}</div>
-            {% if m.msg_type == "image" and upload_url(m.media_path) %}
-              <img src="{{ upload_url(m.media_path) }}" alt="">
-            {% elif m.msg_type == "audio" and upload_url(m.media_path) %}
-              <audio controls preload="metadata" src="{{ upload_url(m.media_path) }}"></audio>
-            {% elif m.msg_type == "video" and upload_url(m.media_path) %}
-              <video controls preload="metadata" src="{{ upload_url(m.media_path) }}"></video>
-            {% elif m.msg_type == "document" and upload_url(m.media_path) %}
-              <a href="{{ upload_url(m.media_path) }}" target="_blank" rel="noopener">Descargar archivo</a>
-            {% endif %}
-            {% if m.body %}<div class="wa-text">{{ m.body }}</div>{% endif %}
-            {% if m.msg_type != "text" and not upload_url(m.media_path) and not m.body %}
-              <div class="muted">({{ m.msg_type }} sin archivo local — configurá Cloud API para descargar media)</div>
+            {% if m.msg_type == "catalog" and m.rich %}
+              <div class="wa-text">{{ m.rich.get("text") or "Catálogo" }}</div>
+              <div class="wa-cards">
+                {% for it in m.rich.get("items") or [] %}
+                  <div class="wa-card">
+                    {% if it.image %}
+                      <img src="{{ it.image }}" alt="">
+                    {% endif %}
+                    <span class="wa-card-n">{{ it.n }}</span>
+                    <strong>{{ it.name }}</strong>
+                    <em>{{ it.price }} {{ it.currency }}</em>
+                    <small>Stock {{ it.stock }}{% if it.category %} · {{ it.category }}{% endif %}</small>
+                  </div>
+                {% endfor %}
+              </div>
+            {% elif m.msg_type == "product_card" and m.rich %}
+              {% if m.rich.get("image") %}<img src="{{ m.rich.get('image') }}" alt="">{% endif %}
+              <div class="wa-text">{{ m.rich.get("text") }}</div>
+            {% elif m.msg_type == "choices" and m.rich %}
+              <div class="wa-text">{{ m.rich.get("text") }}</div>
+              <ul class="wa-choices">
+                {% for it in m.rich.get("items") or [] %}
+                  <li>{{ it.title }}{% if it.description %} — {{ it.description }}{% endif %}</li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              {% if m.msg_type == "image" and upload_url(m.media_path) %}
+                <img src="{{ upload_url(m.media_path) }}" alt="">
+              {% elif m.msg_type == "audio" and upload_url(m.media_path) %}
+                <audio controls preload="metadata" src="{{ upload_url(m.media_path) }}"></audio>
+              {% elif m.msg_type == "video" and upload_url(m.media_path) %}
+                <video controls preload="metadata" src="{{ upload_url(m.media_path) }}"></video>
+              {% elif m.msg_type == "document" and upload_url(m.media_path) %}
+                <a href="{{ upload_url(m.media_path) }}" target="_blank" rel="noopener">Descargar archivo</a>
+              {% endif %}
+              {% if m.body %}<div class="wa-text">{{ m.body }}</div>{% endif %}
+              {% if m.msg_type != "text" and not upload_url(m.media_path) and not m.body %}
+                <div class="muted">({{ m.msg_type }} sin archivo local — configurá Cloud API para descargar media)</div>
+              {% endif %}
             {% endif %}
           </div>
         {% endfor %}
       </div>
       <div class="wa-footer">
         <form class="wa-compose" id="wa-compose" method="post" action="/whatsapp/chat/{{ active }}" enctype="multipart/form-data">
-          <input type="file" id="wa-file" name="media" accept="image/*,video/*,audio/*,.pdf,.ogg,.mp3,.m4a,.mp4,.webm" hidden>
+          <input type="file" id="wa-file" name="media" class="wa-file-input" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ogg,.mp3,.m4a,.mp4,.webm,.mov">
           <input type="hidden" id="wa-voice" name="voice" value="">
-          <button class="btn wa-icon" type="button" id="wa-attach" title="Adjuntar foto, video o audio">📎</button>
+          <button class="btn wa-icon" type="button" id="wa-attach" title="Adjuntar foto, video, audio o archivo">📎</button>
           <button class="btn wa-icon" type="button" id="wa-mic" title="Grabar audio">🎤</button>
           <input name="body" id="wa-text" placeholder="Mensaje o archivo…" autocomplete="off">
           <button class="btn ok" type="submit">Enviar</button>
@@ -174,5 +209,5 @@
     {% endif %}
   </section>
 </div>
-<script src="/static/whatsapp_inbox.js?v=2"></script>
+<script src="/static/whatsapp_inbox.js?v=4"></script>
 {% endblock %}

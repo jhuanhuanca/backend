@@ -2,7 +2,7 @@
 {% block extra_wrap %} wrap-wide sim-page{% endblock %}
 {% block title %}Simulador WhatsApp · {{ app_name }}{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/static/whatsapp_sim.css">
+<link rel="stylesheet" href="/static/whatsapp_sim.css?v=2">
 <p class="sim-kicker">Así se ve el chat en el celular del cliente</p>
 <h1>Vista de WhatsApp</h1>
 <p class="muted sim-lead">Escribís vos (burbuja verde, a la derecha). El bot contesta como lo haría en WhatsApp real (burbuja blanca, a la izquierda). No se envía a un teléfono.</p>
@@ -35,7 +35,7 @@
         <button type="button" id="sim-proof">📎 comprobante</button>
       </div>
       <form class="sim-compose" id="sim-form">
-        <input type="file" id="sim-file" accept="image/*,video/*,audio/*" hidden>
+        <input type="file" id="sim-file" class="sim-file-input" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.ogg,.mp3,.m4a,.mp4,.webm,.mov">
         <button type="button" class="sim-icon" id="sim-attach" title="Foto, video o audio" aria-label="Adjuntar">📎</button>
         <button type="button" class="sim-icon" id="sim-mic" title="Grabar audio" aria-label="Grabar">🎤</button>
         <input id="sim-text" name="text" placeholder="Mensaje" autocomplete="off">
@@ -60,5 +60,5 @@
   </aside>
 </div>
 <script id="sim-boot" type="application/json">{{ boot|tojson }}</script>
-<script src="/static/whatsapp_sim.js?v=3"></script>
+<script src="/static/whatsapp_sim.js?v=4"></script>
 {% endblock %}

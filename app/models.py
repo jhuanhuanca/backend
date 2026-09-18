@@ -74,11 +74,35 @@ class WhatsAppAccount(Base):
     company: Mapped[Company] = relationship(back_populates="whatsapp_accounts")
 
 
-class Customer(Base):
-    __tablename__ = "customers"
+class User(Base):
+    """Login del dashboard: dueño (superadmin) o vendedor de una empresa."""
+
+    __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    phone: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(24), default="vendor", index=True)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
+    totp_secret_enc: Mapped[str] = mapped_column(Text, default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    company: Mapped[Optional[Company]] = relationship()
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+    __table_args__ = (UniqueConstraint("company_id", "phone"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
+    phone: Mapped[str] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     address: Mapped[str] = mapped_column(Text, default="")
     city: Mapped[str] = mapped_column(String(80), default="")
@@ -149,6 +173,9 @@ class LiveSession(Base):
     __tablename__ = "live_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
     public_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     tiktok_username: Mapped[str] = mapped_column(String(120), default="")
     device_serial: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
@@ -166,6 +193,9 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
     public_code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id"), index=True)
     session_id: Mapped[Optional[str]] = mapped_column(
@@ -275,6 +305,9 @@ class Appointment(Base):
     __tablename__ = "appointments"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
     phone: Mapped[str] = mapped_column(String(32), index=True)
     customer_name: Mapped[str] = mapped_column(String(120), default="")
     purpose: Mapped[str] = mapped_column(String(32), default="lead", index=True)
@@ -296,8 +329,11 @@ class Appointment(Base):
 
 class ConversationState(Base):
     __tablename__ = "conversation_states"
+    __table_args__ = (UniqueConstraint("company_id", "phone"),)
 
-    phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    phone: Mapped[str] = mapped_column(String(32), index=True)
     step: Mapped[str] = mapped_column(String(40), default="idle")
     data: Mapped[dict] = mapped_column(JSON, default=dict)
     live_session_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
@@ -316,9 +352,13 @@ class ProcessedWebhook(Base):
 
 class Conversation(Base):
     __tablename__ = "conversations"
+    __table_args__ = (UniqueConstraint("company_id", "phone"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
-    phone: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
+    phone: Mapped[str] = mapped_column(String(32), index=True)
     name: Mapped[str] = mapped_column(String(120), default="")
     last_preview: Mapped[str] = mapped_column(String(240), default="")
     last_message_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -351,6 +391,9 @@ class BotFlow(Base):
     __tablename__ = "bot_flows"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    company_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("companies.id"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(24), default="draft", index=True)
