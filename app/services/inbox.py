@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import desc, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import MEDIA_DIR
@@ -109,10 +110,7 @@ async def get_or_create_conversation(
 ) -> Conversation:
     phone = phone.lstrip("+")
     cid = await tenancy.resolve_company_id(db)
-    query = select(Conversation).where(Conversation.phone == phone)
-    if cid:
-        query = query.where(Conversation.company_id == cid)
-    row = await db.scalar(query)
+    row = await tenancy.find_by_phone(db, Conversation, phone, cid)
     if row:
         if name and name != phone and (not row.name or row.name == row.phone):
             row.name = name
@@ -121,7 +119,19 @@ async def get_or_create_conversation(
         return row
     row = Conversation(phone=phone, name=name or phone, company_id=cid)
     db.add(row)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        row = await tenancy.find_by_phone(db, Conversation, phone, cid)
+        if not row:
+            row = await db.scalar(select(Conversation).where(Conversation.phone == phone))
+        if not row:
+            raise
+        if cid and not row.company_id:
+            row.company_id = cid
+        if name and name != phone and (not row.name or row.name == row.phone):
+            row.name = name
     return row
 
 

@@ -296,9 +296,13 @@ async def simulator_message(
     request: Request, payload: SimPayload, db: AsyncSession = Depends(get_db)
 ):
     _require_json_user(request)
-    return await simulator.send_as_customer(
-        db, phone=payload.phone, name=payload.name, text=payload.text, as_image=payload.image
-    )
+    try:
+        return await simulator.send_as_customer(
+            db, phone=payload.phone, name=payload.name, text=payload.text, as_image=payload.image
+        )
+    except Exception:
+        log.exception("simulador/mensaje falló")
+        raise HTTPException(500, "No se pudo procesar el mensaje del simulador") from None
 
 
 @router.post("/whatsapp/simulador/media")

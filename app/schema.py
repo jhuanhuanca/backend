@@ -432,6 +432,7 @@ def _pg_drop_phone_unique(conn: Connection, table: str) -> None:
         f"{table}_phone_idx",
     ):
         _pg_run(conn, f'ALTER TABLE {table} DROP CONSTRAINT IF EXISTS "{name}"')
+        _pg_run(conn, f'DROP INDEX IF EXISTS "{name}"')
 
 
 def _pg_ensure_unique(conn: Connection, table: str, columns: tuple[str, ...]) -> None:

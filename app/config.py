@@ -64,11 +64,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    QR_DIR.mkdir(parents=True, exist_ok=True)
-    PROOFS_DIR.mkdir(parents=True, exist_ok=True)
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    CATALOG_DIR.mkdir(parents=True, exist_ok=True)
-    FLOW_DIR.mkdir(parents=True, exist_ok=True)
-    PAY_DIR.mkdir(parents=True, exist_ok=True)
+    for path in (DATA_DIR, QR_DIR, PROOFS_DIR, MEDIA_DIR, CATALOG_DIR, FLOW_DIR, PAY_DIR):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            pass
     return Settings()

@@ -33,10 +33,7 @@ async def get_or_create_customer(
 ) -> Customer:
     phone = phone.lstrip("+")
     cid = await tenancy.resolve_company_id(db)
-    query = select(Customer).where(Customer.phone == phone)
-    if cid:
-        query = query.where(Customer.company_id == cid)
-    row = await db.scalar(query)
+    row = await tenancy.find_by_phone(db, Customer, phone, cid)
     if row:
         if name and not row.name:
             row.name = name
