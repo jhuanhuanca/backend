@@ -420,6 +420,7 @@ async def _run_node(
                 notes=notes,
                 delivery_type=mode,
                 delivery_address=str(vars_.get("address") or ""),
+                pay_override=config,
             )
         except StockError as exc:
             out.append(str(exc))

@@ -129,8 +129,11 @@ def snapshot_from_creds(creds: Creds) -> dict:
 
 
 async def get_company(db: AsyncSession, company_id: str | None = None) -> Company | None:
-    if company_id:
-        row = await db.get(Company, company_id)
+    from app.services import tenancy
+
+    cid = company_id or tenancy.current_company_id()
+    if cid:
+        row = await db.get(Company, cid)
         if row:
             return row
     row = await db.scalar(select(Company).where(Company.is_default.is_(True)))

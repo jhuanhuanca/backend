@@ -8,7 +8,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -799,18 +799,12 @@ async def save_payments_settings(
     if not company:
         return RedirectResponse("/cobros?error=empresa", status_code=303)
     request.session["company_id"] = company.id
-    await db.execute(
-        update(Company)
-        .where(Company.id == company.id)
-        .values(
-            bank_name=bank_name.strip()[:120],
-            bank_holder=bank_holder.strip()[:160],
-            bank_account_type=bank_account_type.strip()[:80],
-            bank_account_number=bank_account_number.strip()[:80],
-            bank_id_doc=bank_id_doc.strip()[:80],
-            pay_instructions=pay_instructions.strip()[:2000],
-        )
-    )
+    company.bank_name = bank_name.strip()[:120]
+    company.bank_holder = bank_holder.strip()[:160]
+    company.bank_account_type = bank_account_type.strip()[:80]
+    company.bank_account_number = bank_account_number.strip()[:80]
+    company.bank_id_doc = bank_id_doc.strip()[:80]
+    company.pay_instructions = pay_instructions.strip()[:2000]
     await db.commit()
     return RedirectResponse("/cobros?ok=cuenta", status_code=303)
 
@@ -833,7 +827,7 @@ async def save_pay_qr(
     if err or not path:
         return RedirectResponse(f"/cobros?error={quote(err or 'No se pudo guardar el QR')}", status_code=303)
     request.session["company_id"] = company.id
-    await db.execute(update(Company).where(Company.id == company.id).values(pay_qr_path=path))
+    company.pay_qr_path = path
     await db.commit()
     return RedirectResponse("/cobros?ok=qr", status_code=303)
 
@@ -848,7 +842,7 @@ async def delete_pay_qr(request: Request, db: AsyncSession = Depends(get_db)):
     company = await wa.get_company(db, request.session.get("company_id"))
     if company:
         old = Path(company.pay_qr_path) if company.pay_qr_path else None
-        await db.execute(update(Company).where(Company.id == company.id).values(pay_qr_path=""))
+        company.pay_qr_path = ""
         await db.commit()
         if old and old.exists() and PAY_DIR.resolve() in old.resolve().parents:
             old.unlink(missing_ok=True)

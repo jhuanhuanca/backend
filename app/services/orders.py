@@ -59,6 +59,7 @@ async def create_whatsapp_order(
     notes: str = "",
     delivery_type: str = "to_coordinate",
     delivery_address: str = "",
+    pay_override: dict | None = None,
 ) -> Order:
     customer = await get_or_create_customer(db, phone, name)
     unit = Decimal(product.price)
@@ -100,8 +101,10 @@ async def create_whatsapp_order(
     )
     from app.services import whatsapp as wa_svc
 
-    company = await wa_svc.get_company(db)
-    payload, qr_path, method = prepare_payment_assets(order.public_code, charge, company)
+    company = await wa_svc.get_company(db, await tenancy.resolve_company_id(db))
+    payload, qr_path, method = prepare_payment_assets(
+        order.public_code, charge, company, override=pay_override
+    )
     payment = Payment(
         order_id=order.id,
         amount=charge,

@@ -51,7 +51,7 @@
     wait_input: "El chat se pausa. Usalo si el cliente tiene que escribir. Si querés botones para tocar, usá el bloque Botones.",
     wait_payment: "Espera la foto del comprobante. La salida típica es “Si manda una foto” hacia Guardar foto de pago.",
     match_product: "Busca qué producto pidió. Unilo con “Si encontró el producto” y “Si no encontró el producto”.",
-    create_order: "Crea el pedido y manda el QR. Podés cobrar un adelanto y sumar envío.",
+    create_order: "Crea el pedido y manda los datos de Cobros (cuenta y QR). Podés pisar banco/QR solo en este nodo.",
     attach_proof: "Guarda la foto del pago. Después unilo a un mensaje de “recibido”.",
     capture: "Guarda un dato (ciudad, tipo de reunión) para usarlo más adelante.",
     schedule_fulfillment: "Pregunta si es envío, otra ciudad o reunión y pide día y hora.",
@@ -821,10 +821,31 @@
       html += mediaHtml(node);
     }
     if (node.type === "create_order") {
+      const qr = node.config.pay_qr_path || node.config.qr_url || "";
       html += `<label>Adelanto %<br><input id="insp-deposit" type="number" min="1" max="100"></label>
         <label>Envío en la ciudad (BOB)<br><input id="insp-ship-local"></label>
         <label>Envío a otra ciudad (BOB)<br><input id="insp-ship-int"></label>
-        <label class="fs-check"><input type="checkbox" id="insp-skip-sched"> Ya pedí fecha/hora antes del QR</label>`;
+        <label class="fs-check"><input type="checkbox" id="insp-skip-sched"> Ya pedí fecha/hora antes del QR</label>
+        <h2>Cobro</h2>
+        <p class="muted">Vacío = usa lo de <a href="/cobros" target="_blank">Cobros</a>. Si llenás un campo, ese valor sale en este nodo.</p>
+        <label>Banco<br><input id="insp-bank-name" placeholder="El de Cobros si lo dejás vacío"></label>
+        <label>Titular<br><input id="insp-bank-holder"></label>
+        <label>Tipo de cuenta<br>
+          <select id="insp-bank-type">
+            <option value="">El de Cobros</option>
+            <option>Caja de ahorro</option>
+            <option>Cuenta corriente</option>
+            <option>Cuenta fiscal</option>
+          </select>
+        </label>
+        <label>N° de cuenta<br><input id="insp-bank-number"></label>
+        <label>CI / NIT<br><input id="insp-bank-doc"></label>
+        <label>Nota para el cliente<br><textarea id="insp-pay-note" placeholder="Ej: Pagá el adelanto y el envío."></textarea></label>
+        <label>QR de este nodo (opcional)
+          <input type="file" id="insp-pay-qr-file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+        </label>
+        ${qr ? `<p><img class="fs-cover-prev" src="${escapeHtml(qr)}" alt="QR"></p>
+          <button type="button" class="btn" id="insp-pay-qr-clear">Quitar QR del nodo</button>` : `<p class="muted">Sin QR en el nodo se manda el de Cobros.</p>`}`;
     }
     if (node.type === "schedule_fulfillment") {
       html += `<label>Qué ofrecer (separado por coma)<br><input id="insp-modes" placeholder="delivery,shipping,meeting"></label>
@@ -921,6 +942,49 @@
       skip.checked = node.config.skip_schedule !== false;
       skip.addEventListener("change", () => {
         node.config.skip_schedule = skip.checked;
+      });
+    }
+    const bindPay = (id, key) => {
+      const el = inspector.querySelector(id);
+      if (!el) return;
+      el.value = node.config[key] || "";
+      el.addEventListener("input", (e) => {
+        node.config[key] = e.target.value;
+      });
+    };
+    bindPay("#insp-bank-name", "bank_name");
+    bindPay("#insp-bank-holder", "bank_holder");
+    bindPay("#insp-bank-number", "bank_account_number");
+    bindPay("#insp-bank-doc", "bank_id_doc");
+    bindPay("#insp-pay-note", "pay_instructions");
+    const bankType = inspector.querySelector("#insp-bank-type");
+    if (bankType) {
+      bankType.value = node.config.bank_account_type || "";
+      bankType.addEventListener("change", () => {
+        node.config.bank_account_type = bankType.value;
+      });
+    }
+    const qrFile = inspector.querySelector("#insp-pay-qr-file");
+    if (qrFile) {
+      qrFile.addEventListener("change", async () => {
+        if (!qrFile.files[0]) return;
+        try {
+          setMsg("Subiendo QR…");
+          const url = await uploadFile(qrFile.files[0], "image");
+          node.config.pay_qr_path = url;
+          setMsg("QR del nodo listo. Guardá el flujo.");
+          renderInspector();
+        } catch (err) {
+          setMsg(err.message || "Error al subir el QR");
+        }
+      });
+    }
+    const qrClear = inspector.querySelector("#insp-pay-qr-clear");
+    if (qrClear) {
+      qrClear.addEventListener("click", () => {
+        node.config.pay_qr_path = "";
+        node.config.qr_url = "";
+        renderInspector();
       });
     }
     const modes = inspector.querySelector("#insp-modes");
