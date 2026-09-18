@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BotFlow, Company, Product, User, WhatsAppAccount
@@ -175,7 +176,10 @@ async def ensure_admin_user(db: AsyncSession, company_id: str | None) -> None:
             totp_enabled=False,
         )
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
 
 
 SAMPLE_FLOWS = (

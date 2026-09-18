@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -16,17 +17,22 @@ from app.schema import apply_schema_patches
 from app.seed import seed_if_empty
 
 settings = get_settings()
+log = logging.getLogger("uvicorn.error")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(apply_schema_patches)
-    async with SessionLocal() as db:
-        await seed_if_empty(db)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(apply_schema_patches)
+        async with SessionLocal() as db:
+            await seed_if_empty(db)
+    except Exception:
+        log.exception("Fallo al iniciar la base (parches o seed)")
+        raise
     yield
 
 

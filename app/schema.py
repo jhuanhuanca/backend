@@ -276,6 +276,8 @@ def _rebuild_customers(conn: Connection, default_id: str) -> None:
 
 
 def apply_postgres_patches(conn: Connection) -> None:
+    # uvicorn --workers 2 corre el lifespan dos veces: un lock evita ALTER en paralelo.
+    conn.execute(text("SELECT pg_advisory_xact_lock(872314)"))
     _pg_add_column(conn, "companies", "store_enabled", "BOOLEAN DEFAULT TRUE")
     _pg_add_column(conn, "companies", "store_tagline", "VARCHAR(240) DEFAULT ''")
     _pg_add_column(conn, "companies", "pay_qr_path", "VARCHAR(500) DEFAULT ''")
@@ -301,7 +303,7 @@ def apply_postgres_patches(conn: Connection) -> None:
             conn.execute(text("UPDATE companies SET store_enabled = TRUE WHERE store_enabled IS NULL"))
     _pg_patch_conversation_states(conn, default_id or "")
     for table in ("conversations", "customers"):
-        _pg_drop_unique_on_columns(conn, table, ("phone",))
+        _pg_drop_phone_unique(conn, table)
         _pg_ensure_unique(conn, table, ("company_id", "phone"))
 
 
@@ -334,18 +336,22 @@ def apply_mysql_patches(conn: Connection) -> None:
 
 
 def _sql_has_table(conn: Connection, table: str) -> bool:
-    row = conn.execute(
-        text(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = current_schema() AND table_name = :t"
-        )
-        if conn.dialect.name == "postgresql"
-        else text(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema = DATABASE() AND table_name = :t"
-        ),
-        {"t": table},
-    ).scalar()
+    if conn.dialect.name == "postgresql":
+        row = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema IN ('public', current_schema()) AND table_name = :t"
+            ),
+            {"t": table},
+        ).scalar()
+    else:
+        row = conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = DATABASE() AND table_name = :t"
+            ),
+            {"t": table},
+        ).scalar()
     return bool(row)
 
 
@@ -354,7 +360,7 @@ def _sql_has_column(conn: Connection, table: str, column: str) -> bool:
         row = conn.execute(
             text(
                 "SELECT 1 FROM information_schema.columns "
-                "WHERE table_schema = current_schema() "
+                "WHERE table_schema IN ('public', current_schema()) "
                 "AND table_name = :t AND column_name = :c"
             ),
             {"t": table, "c": column},
@@ -388,7 +394,7 @@ def _sql_default_company_id(conn: Connection) -> str | None:
 def _pg_add_column(conn: Connection, table: str, column: str, ddl: str) -> None:
     if not _sql_has_table(conn, table) or _sql_has_column(conn, table, column):
         return
-    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {ddl}"))
 
 
 def _mysql_add_column(conn: Connection, table: str, column: str, ddl: str) -> None:
@@ -397,74 +403,52 @@ def _mysql_add_column(conn: Connection, table: str, column: str, ddl: str) -> No
     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
 
-def _pg_constraint_columns(conn: Connection, table: str) -> list[tuple[str, str, tuple[str, ...]]]:
-    rows = conn.execute(
-        text(
-            """
-            SELECT c.conname, c.contype, array_agg(a.attname ORDER BY u.ord) AS cols
-            FROM pg_constraint c
-            JOIN pg_class t ON t.oid = c.conrelid
-            JOIN pg_namespace n ON n.oid = t.relnamespace
-            JOIN unnest(c.conkey) WITH ORDINALITY AS u(attnum, ord) ON true
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = u.attnum
-            WHERE n.nspname = current_schema() AND t.relname = :table
-              AND c.contype IN ('u', 'p')
-            GROUP BY c.conname, c.contype
-            """
-        ),
-        {"table": table},
-    ).fetchall()
-    return [(str(r[0]), str(r[1]), tuple(r[2] or ())) for r in rows]
-
-
-def _pg_drop_unique_on_columns(conn: Connection, table: str, columns: tuple[str, ...]) -> None:
+def _pg_drop_phone_unique(conn: Connection, table: str) -> None:
     if not _sql_has_table(conn, table):
         return
-    wanted = tuple(columns)
-    for name, kind, cols in _pg_constraint_columns(conn, table):
-        if kind == "u" and cols == wanted:
-            conn.execute(text(f'ALTER TABLE {table} DROP CONSTRAINT IF EXISTS "{name}"'))
-    index_rows = conn.execute(
-        text(
-            """
-            SELECT i.relname, array_agg(a.attname ORDER BY u.ord) AS cols
-            FROM pg_index idx
-            JOIN pg_class i ON i.oid = idx.indexrelid
-            JOIN pg_class t ON t.oid = idx.indrelid
-            JOIN pg_namespace n ON n.oid = t.relnamespace
-            JOIN unnest(idx.indkey) WITH ORDINALITY AS u(attnum, ord) ON true
-            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = u.attnum
-            WHERE n.nspname = current_schema() AND t.relname = :table
-              AND idx.indisunique AND NOT idx.indisprimary
-            GROUP BY i.relname
-            """
-        ),
-        {"table": table},
-    ).fetchall()
-    for name, cols in index_rows:
-        if tuple(cols or ()) == wanted:
-            conn.execute(text(f'DROP INDEX IF EXISTS "{name}"'))
+    for name in (
+        f"{table}_phone_key",
+        f"uq_{table}_phone",
+        f"ix_{table}_phone",
+        f"{table}_phone_idx",
+    ):
+        conn.execute(text(f'ALTER TABLE {table} DROP CONSTRAINT IF EXISTS "{name}"'))
 
 
 def _pg_ensure_unique(conn: Connection, table: str, columns: tuple[str, ...]) -> None:
     if not _sql_has_table(conn, table):
         return
-    wanted = tuple(columns)
-    for _name, kind, cols in _pg_constraint_columns(conn, table):
-        if kind == "u" and cols == wanted:
-            return
     index_name = f"uq_{table}_{'_'.join(columns)}"
     cols_sql = ", ".join(columns)
     conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS {index_name} ON {table} ({cols_sql})"))
 
 
+def _pg_pk_columns(conn: Connection, table: str) -> list[str]:
+    rows = conn.execute(
+        text(
+            """
+            SELECT a.attname
+            FROM pg_index i
+            JOIN pg_attribute a
+              ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey)
+            WHERE i.indrelid = to_regclass(:reg) AND i.indisprimary
+            ORDER BY a.attnum
+            """
+        ),
+        {"reg": table},
+    ).fetchall()
+    return [str(r[0]) for r in rows]
+
+
 def _pg_patch_conversation_states(conn: Connection, default_id: str) -> None:
     if not _sql_has_table(conn, "conversation_states"):
         return
-    if not _sql_has_column(conn, "conversation_states", "company_id"):
-        conn.execute(
-            text("ALTER TABLE conversation_states ADD COLUMN company_id VARCHAR(36) DEFAULT ''")
+    conn.execute(
+        text(
+            "ALTER TABLE conversation_states "
+            "ADD COLUMN IF NOT EXISTS company_id VARCHAR(36) DEFAULT ''"
         )
+    )
     if default_id:
         conn.execute(
             text(
@@ -473,25 +457,25 @@ def _pg_patch_conversation_states(conn: Connection, default_id: str) -> None:
             ),
             {"cid": default_id},
         )
-    if not _sql_has_column(conn, "conversation_states", "id"):
-        conn.execute(text("ALTER TABLE conversation_states ADD COLUMN id VARCHAR(36)"))
-        phones = conn.execute(text("SELECT phone FROM conversation_states")).fetchall()
-        for (phone,) in phones:
-            conn.execute(
-                text("UPDATE conversation_states SET id = :id WHERE phone = :phone AND id IS NULL"),
-                {"id": str(uuid.uuid4()), "phone": phone},
-            )
-        pk_name = None
-        for name, kind, _cols in _pg_constraint_columns(conn, "conversation_states"):
-            if kind == "p":
-                pk_name = name
-                break
-        if pk_name:
-            conn.execute(
-                text(f'ALTER TABLE conversation_states DROP CONSTRAINT "{pk_name}"')
-            )
-        conn.execute(text("ALTER TABLE conversation_states ALTER COLUMN id SET NOT NULL"))
-        conn.execute(text("ALTER TABLE conversation_states ADD PRIMARY KEY (id)"))
+    pk_cols = _pg_pk_columns(conn, "conversation_states")
+    if pk_cols == ["id"]:
+        _pg_ensure_unique(conn, "conversation_states", ("company_id", "phone"))
+        return
+    conn.execute(text("ALTER TABLE conversation_states ADD COLUMN IF NOT EXISTS id VARCHAR(36)"))
+    phones = conn.execute(
+        text("SELECT phone FROM conversation_states WHERE id IS NULL")
+    ).fetchall()
+    for (phone,) in phones:
+        conn.execute(
+            text("UPDATE conversation_states SET id = :id WHERE phone = :phone AND id IS NULL"),
+            {"id": str(uuid.uuid4()), "phone": phone},
+        )
+    if pk_cols:
+        conn.execute(
+            text("ALTER TABLE conversation_states DROP CONSTRAINT IF EXISTS conversation_states_pkey")
+        )
+    conn.execute(text("ALTER TABLE conversation_states ALTER COLUMN id SET NOT NULL"))
+    conn.execute(text("ALTER TABLE conversation_states ADD PRIMARY KEY (id)"))
     _pg_ensure_unique(conn, "conversation_states", ("company_id", "phone"))
 
 
