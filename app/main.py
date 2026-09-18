@@ -27,11 +27,18 @@ async def lifespan(_app: FastAPI):
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            await conn.run_sync(apply_schema_patches)
-        async with SessionLocal() as db:
-            await seed_if_empty(db)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(apply_schema_patches)
+        except Exception:
+            log.exception("Parches de esquema fallaron; el proceso sigue")
+        try:
+            async with SessionLocal() as db:
+                await seed_if_empty(db)
+        except Exception:
+            log.exception("Seed falló; el proceso sigue")
     except Exception:
-        log.exception("Fallo al iniciar la base (parches o seed)")
+        log.exception("Fallo al crear tablas")
         raise
     yield
 

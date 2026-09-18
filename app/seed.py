@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import BotFlow, Company, Product, User, WhatsAppAccount
@@ -126,7 +126,11 @@ async def seed_if_empty(db: AsyncSession) -> None:
     if not company:
         company = await db.scalar(select(Company).limit(1))
     if company:
-        orphans = list(await db.scalars(select(Product).where(Product.company_id.is_(None))))
+        try:
+            orphans = list(await db.scalars(select(Product).where(Product.company_id.is_(None))))
+        except ProgrammingError:
+            await db.rollback()
+            orphans = []
         for product in orphans:
             product.company_id = company.id
         if orphans:
@@ -151,7 +155,13 @@ async def seed_if_empty(db: AsyncSession) -> None:
     if tagged:
         await db.commit()
     if company:
-        flow_orphans = list(await db.scalars(select(BotFlow).where(BotFlow.company_id.is_(None))))
+        try:
+            flow_orphans = list(
+                await db.scalars(select(BotFlow).where(BotFlow.company_id.is_(None)))
+            )
+        except ProgrammingError:
+            await db.rollback()
+            flow_orphans = []
         for flow in flow_orphans:
             flow.company_id = company.id
         if flow_orphans:

@@ -13,7 +13,6 @@ import time
 import unicodedata
 from urllib.parse import quote
 
-import qrcode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
@@ -104,6 +103,8 @@ def totp_uri(secret: str, username: str, issuer: str) -> str:
 
 
 def totp_qr_data_uri(uri: str) -> str:
+    import qrcode
+
     image = qrcode.make(uri)
     buf = io.BytesIO()
     image.save(buf, format="PNG")
