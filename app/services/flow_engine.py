@@ -31,14 +31,14 @@ MAX_BUTTONS = 10
 
 
 async def published_flow(db: AsyncSession) -> BotFlow | None:
+    cid = tenancy.current_company_id()
+    if not cid:
+        return None
     query = (
         select(BotFlow)
-        .where(BotFlow.status == "published")
+        .where(BotFlow.status == "published", BotFlow.company_id == cid)
         .order_by(BotFlow.is_default.desc(), BotFlow.updated_at.desc())
     )
-    cid = tenancy.current_company_id()
-    if cid:
-        query = query.where(BotFlow.company_id == cid)
     return await db.scalar(query)
 
 

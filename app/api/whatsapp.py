@@ -49,22 +49,33 @@ async def receive_webhook(
         payload = json.loads(raw.decode("utf-8") or "{}")
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="JSON inválido") from exc
-    phone_id = _phone_number_id(payload)
-    creds = await whatsapp.creds_for_phone_id(db, phone_id)
+    phone_id, display = _webhook_meta(payload)
+    creds = await whatsapp.creds_for_inbound(
+        db, phone_number_id=phone_id, display_phone=display
+    )
     ok, how = await whatsapp.verify_webhook_signature(db, raw, x_hub_signature_256)
     if not ok:
         log.warning(
-            "firma inválida phone_id=%s company=%s reason=%s header=%s",
+            "firma inválida phone_id=%s display=%s company=%s reason=%s header=%s",
             phone_id,
-            creds.company_id,
+            display,
+            creds.company_id if creds else None,
             how,
             bool(x_hub_signature_256),
         )
         raise HTTPException(status_code=403, detail="Firma inválida")
-    handled = await _dispatch(db, payload, creds)
+    if not creds or not creds.company_id:
+        log.warning(
+            "webhook sin empresa (no se usa el admin). phone_id=%s display=%s",
+            phone_id,
+            display,
+        )
+        return {"ok": True, "ignored": "sin-empresa"}
+    handled = await _dispatch(db, payload)
     log.info(
-        "webhook ok phone_id=%s company=%s inbound=%s firma=%s",
+        "webhook ok phone_id=%s display=%s company=%s inbound=%s firma=%s",
         phone_id,
+        display,
         creds.company_id,
         handled,
         how,
@@ -98,14 +109,20 @@ async def simulate_whatsapp(payload: SimulateIn, db: AsyncSession = Depends(get_
     return {"ok": True, "replies": replies}
 
 
-def _phone_number_id(payload: dict) -> str:
+def _webhook_meta(payload: dict) -> tuple[str, str]:
     for entry in payload.get("entry") or []:
         for change in entry.get("changes") or []:
             meta = (change.get("value") or {}).get("metadata") or {}
-            pid = meta.get("phone_number_id") or ""
-            if pid:
-                return str(pid)
-    return ""
+            pid = str(meta.get("phone_number_id") or "").strip()
+            display = str(meta.get("display_phone_number") or "").strip()
+            if pid or display:
+                return pid, display
+    return "", ""
+
+
+def _phone_number_id(payload: dict) -> str:
+    pid, _display = _webhook_meta(payload)
+    return pid
 
 
 async def _seen(db: AsyncSession, msg_id: str) -> bool:
@@ -124,7 +141,7 @@ async def _seen(db: AsyncSession, msg_id: str) -> bool:
         return True
 
 
-async def _dispatch(db: AsyncSession, payload: dict, creds) -> int:
+async def _dispatch(db: AsyncSession, payload: dict) -> int:
     handled = 0
     for entry in payload.get("entry") or []:
         for change in entry.get("changes") or []:
@@ -132,14 +149,29 @@ async def _dispatch(db: AsyncSession, payload: dict, creds) -> int:
             messages = value.get("messages") or []
             statuses = value.get("statuses") or []
             meta = value.get("metadata") or {}
+            phone_id = str(meta.get("phone_number_id") or "").strip()
+            display = str(meta.get("display_phone_number") or "").strip()
+            creds = await whatsapp.creds_for_inbound(
+                db, phone_number_id=phone_id, display_phone=display
+            )
             log.info(
-                "webhook field=%s messages=%s statuses=%s display=%s phone_id=%s",
+                "webhook field=%s messages=%s statuses=%s display=%s phone_id=%s company=%s",
                 change.get("field"),
                 len(messages),
                 len(statuses),
-                meta.get("display_phone_number"),
-                meta.get("phone_number_id"),
+                display,
+                phone_id,
+                creds.company_id if creds else None,
             )
+            if not messages:
+                continue
+            if not creds or not creds.company_id:
+                log.warning(
+                    "mensaje ignorado: el Phone Number ID %s / %s no pertenece a ninguna empresa",
+                    phone_id,
+                    display,
+                )
+                continue
             contacts = {c.get("wa_id"): c for c in value.get("contacts") or []}
             for message in messages:
                 msg_id = message.get("id") or ""

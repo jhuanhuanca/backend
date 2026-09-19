@@ -182,16 +182,53 @@ async def load_creds(db: AsyncSession | None = None, company_id: str | None = No
 
 
 async def creds_for_phone_id(db: AsyncSession, phone_number_id: str) -> Creds:
-    pid = (phone_number_id or "").strip()
-    if pid:
-        account = await db.scalar(
+    found = await creds_for_inbound(db, phone_number_id=phone_number_id)
+    if found:
+        return found
+    return await load_creds(db)
+
+
+def _digits(value: str) -> str:
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+async def creds_for_inbound(
+    db: AsyncSession,
+    *,
+    phone_number_id: str = "",
+    display_phone: str = "",
+) -> Creds | None:
+    """Cuenta de la empresa dueña del número de Meta. Nunca cae al admin por defecto."""
+    pid = str(phone_number_id or "").strip()
+    pid_digits = _digits(pid)
+    e164 = normalize_e164(display_phone)
+    accounts = list(
+        await db.scalars(
             select(WhatsAppAccount)
-            .where(WhatsAppAccount.phone_number_id == pid)
+            .where(WhatsAppAccount.is_active.is_(True))
             .options(selectinload(WhatsAppAccount.company))
         )
-        if account:
-            return _from_account(account)
-    return await load_creds(db)
+    )
+    if pid:
+        for account in accounts:
+            stored = (account.phone_number_id or "").strip()
+            if stored and stored == pid:
+                return _from_account(account)
+        if pid_digits:
+            for account in accounts:
+                stored = _digits(account.phone_number_id or "")
+                if stored and stored == pid_digits:
+                    return _from_account(account)
+    if e164:
+        for account in accounts:
+            stored = normalize_e164(account.business_e164)
+            if stored and stored == e164:
+                return _from_account(account)
+            if stored and e164.endswith(stored[-8:]) and len(stored) >= 8:
+                return _from_account(account)
+            if stored and stored.endswith(e164[-8:]) and len(e164) >= 8:
+                return _from_account(account)
+    return None
 
 
 async def verify_token_ok(db: AsyncSession, incoming: str | None) -> bool:
