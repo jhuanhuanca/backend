@@ -11,6 +11,7 @@ NODE_TYPES = (
     "wait_input",
     "wait_payment",
     "match_product",
+    "match_image",
     "create_order",
     "attach_proof",
     "order_status",
@@ -80,6 +81,12 @@ PALETTE = [
         "group": "Venta",
     },
     {
+        "type": "match_image",
+        "label": "Reconocer foto",
+        "hint": "Compara una captura con el catálogo",
+        "group": "Venta",
+    },
+    {
         "type": "schedule_fulfillment",
         "label": "Agendar entrega o reunión",
         "hint": "Día, hora, domicilio o Meet",
@@ -144,6 +151,7 @@ TRIGGER_TYPES = (
     "is_image",
     "found",
     "not_found",
+    "unsure",
     "transition",
 )
 
@@ -155,6 +163,7 @@ AUTO_TYPES = {
     "send_audio",
     "send_video",
     "match_product",
+    "match_image",
     "create_order",
     "attach_proof",
     "order_status",

@@ -5,6 +5,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 from app.config import UPLOADS_DIR, get_settings
 from app.models import Product
@@ -91,9 +92,19 @@ def _public_image_url(url: str) -> str:
 
 def local_upload_path(url: str) -> Path | None:
     raw = (url or "").strip()
-    if not raw.startswith("/uploads/"):
+    if not raw:
         return None
-    path = (UPLOADS_DIR / raw[len("/uploads/") :]).resolve()
+    path_part = raw.split("?", 1)[0]
+    if "://" in path_part:
+        path_part = urlparse(path_part).path or ""
+    if path_part.startswith("uploads/"):
+        path_part = "/" + path_part
+    if not path_part.startswith("/uploads/"):
+        return None
+    rel = path_part[len("/uploads/") :].lstrip("/")
+    if not rel or ".." in Path(rel).parts:
+        return None
+    path = (UPLOADS_DIR / rel).resolve()
     try:
         path.relative_to(UPLOADS_DIR.resolve())
     except ValueError:
@@ -109,15 +120,33 @@ async def _send_catalog_image(db: AsyncSession, phone: str, url: str, caption: s
     link = (url or "").strip()
     try:
         local = _local_upload_path(link)
+        if not local:
+            from app.services import visual_catalog
+
+            local = await visual_catalog.materialize_image(link)
         if local:
             sent = await whatsapp.send_image(phone, local, caption, db=db)
             await inbox.record_bot_image(db, phone, local, caption, sent)
             return
-        public = _public_image_url(link)
+        public = _public_image_url(link) or (link if link.startswith(("http://", "https://")) else "")
         if public:
-            await whatsapp.send_image_link(phone, public, caption, db=db)
+            sent = await whatsapp.send_image_link(phone, public, caption, db=db)
+            await inbox.record_bot_media(
+                db,
+                phone,
+                msg_type="image",
+                caption=caption,
+                path=public,
+                mime="image/jpeg",
+                send_result=sent,
+            )
+            return
+        if caption:
+            sent = await whatsapp.send_text(phone, caption, db=db)
+            await inbox.record_bot_text(db, phone, caption, sent)
     except CloudError:
-        return
+        if caption:
+            await inbox.record_bot_text(db, phone, caption, {"skipped": True})
 
 
 def _catalog_text(header: str, items: list[dict]) -> str:

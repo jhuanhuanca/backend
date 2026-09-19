@@ -12,6 +12,7 @@ async def run_conversation(
     name: str,
     text: str | None = None,
     image_media_id: str | None = None,
+    image_path: str | None = None,
 ) -> list[str]:
     published = await flow_engine.published_flow(db)
     if published:
@@ -21,6 +22,7 @@ async def run_conversation(
             name=name,
             text=text,
             image_media_id=image_media_id,
+            image_path=image_path,
             flow=published,
         )
     return await bot.handle_incoming(

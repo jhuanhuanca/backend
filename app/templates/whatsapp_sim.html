@@ -54,11 +54,11 @@
       <input id="sim-phone-input" value="{{ boot.phone or default_phone }}">
     </label>
     <button class="btn" type="button" id="sim-reset">Reiniciar conversación</button>
-    <p class="muted">Escribí <span class="code">hola</span>, elegí 1 o 2, y tocá un producto. Para el pago usá el chip <strong>comprobante</strong> (simula enviar la foto). No se manda a un teléfono real.</p>
+    <p class="muted">Escribí <span class="code">hola</span>, elegí 1 o 2, y tocá un producto. Para <strong>reconocer una foto</strong> usá el clip 📎 y subí la captura (JPG/PNG). El chip <strong>comprobante</strong> solo finge un archivo: no sirve para el motor visual.</p>
     <p class="muted">Si un producto no tiene foto, cargá la URL en Inventario → Ficha.</p>
     <p><a href="/whatsapp">Volver al Hub</a></p>
   </aside>
 </div>
 <script id="sim-boot" type="application/json">{{ boot|tojson }}</script>
-<script src="/static/whatsapp_sim.js?v=4"></script>
+<script src="/static/whatsapp_sim.js?v=5"></script>
 {% endblock %}

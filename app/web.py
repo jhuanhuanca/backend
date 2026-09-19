@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import quote
@@ -35,6 +36,7 @@ from app.services.product_specs import (
 
 router = APIRouter(tags=["dashboard"])
 settings = get_settings()
+log = logging.getLogger("web")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 
@@ -100,6 +102,15 @@ def _belongs(request: Request, company_id: str | None) -> bool:
     if not cid or not company_id:
         return True
     return company_id == cid
+
+
+async def _index_visual(db: AsyncSession) -> None:
+    try:
+        from app.services import visual_catalog
+
+        await visual_catalog.reindex_current(db)
+    except Exception:
+        log.exception("No se pudo reindexar el catálogo visual")
 
 
 async def _owned_order(db: AsyncSession, request: Request, order_id: str) -> Order | None:
@@ -586,6 +597,7 @@ async def create_product(
     )
     db.add(product)
     await db.commit()
+    await _index_visual(db)
     return RedirectResponse("/inventario", status_code=303)
 
 
@@ -654,6 +666,7 @@ async def update_product(
         company_id=product.company_id,
     )
     await db.commit()
+    await _index_visual(db)
     return RedirectResponse("/inventario", status_code=303)
 
 
@@ -692,6 +705,7 @@ async def delete_product(
         await db.commit()
     except inventory.StockError:
         raise HTTPException(404, "Producto no encontrado")
+    await _index_visual(db)
     return RedirectResponse(f"/inventario?ok={result}", status_code=303)
 
 

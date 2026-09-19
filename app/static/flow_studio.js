@@ -16,6 +16,7 @@
     wait_input: { label: "Esperar respuesta" },
     wait_payment: { label: "Esperar foto de pago" },
     match_product: { label: "Buscar producto" },
+    match_image: { label: "Reconocer foto" },
     create_order: { label: "Crear pedido y QR" },
     attach_proof: { label: "Guardar foto de pago" },
     capture: { label: "Guardar lo que dijo" },
@@ -36,6 +37,7 @@
     ["default", "Si no entendió (otra cosa)"],
     ["found", "Si encontró el producto"],
     ["not_found", "Si no encontró el producto"],
+    ["unsure", "Si hay varias opciones parecidas"],
     ["transition", "Según lo que decida la IA"],
     ["regex", "Texto especial (avanzado)"],
   ];
@@ -51,6 +53,7 @@
     wait_input: "El chat se pausa. Usalo si el cliente tiene que escribir. Si querés botones para tocar, usá el bloque Botones.",
     wait_payment: "Espera la foto del comprobante. La salida típica es “Si manda una foto” hacia Guardar foto de pago.",
     match_product: "Busca qué producto pidió. Unilo con “Si encontró el producto” y “Si no encontró el producto”.",
+    match_image: "Compara la captura del live con las fotos del inventario. Unilo: Esperar respuesta → Si manda una foto → Reconocer foto. Confianza alta vende; si duda, pregunta.",
     create_order: "Crea el pedido y manda los datos de Cobros (cuenta y QR). Podés pisar banco/QR solo en este nodo.",
     attach_proof: "Guarda la foto del pago. Después unilo a un mensaje de “recibido”.",
     capture: "Guarda un dato (ciudad, tipo de reunión) para usarlo más adelante.",
@@ -96,6 +99,7 @@
     if (kind === "is_image") return "si manda foto";
     if (kind === "found") return "sí, hay producto";
     if (kind === "not_found") return "no hay producto";
+    if (kind === "unsure") return "si hay varias opciones";
     if (kind === "transition") return key ? "IA: " + key : "según la IA";
     if (kind === "regex") return key ? "texto: " + key : "texto especial";
     return triggerLabel(kind);
@@ -122,9 +126,18 @@
   }
 
   function def() {
-    if (!flow.definition) flow.definition = { nodes: [], edges: [] };
-    if (!flow.definition.nodes) flow.definition.nodes = [];
-    if (!flow.definition.edges) flow.definition.edges = [];
+    if (typeof flow.definition === "string") {
+      try {
+        flow.definition = JSON.parse(flow.definition);
+      } catch (_err) {
+        flow.definition = { nodes: [], edges: [] };
+      }
+    }
+    if (!flow.definition || typeof flow.definition !== "object") {
+      flow.definition = { nodes: [], edges: [] };
+    }
+    if (!Array.isArray(flow.definition.nodes)) flow.definition.nodes = [];
+    if (!Array.isArray(flow.definition.edges)) flow.definition.edges = [];
     return flow.definition;
   }
 
@@ -135,6 +148,14 @@
     }
     if (type === "create_order") {
       return { deposit_percent: 50, shipping_local: "20", shipping_interior: "40", skip_schedule: true };
+    }
+    if (type === "match_image") {
+      return {
+        threshold: 0.85,
+        unsure: 0.6,
+        confirm_text:
+          "Encontré: {{product_name}} — {{product_price}} {{currency}}.\n¿Es este? Si sí, decime la cantidad.",
+      };
     }
     if (type === "schedule_fulfillment") {
       return {
@@ -820,6 +841,12 @@
     if (mediaKind(node.type)) {
       html += mediaHtml(node);
     }
+    if (node.type === "match_image") {
+      html += `<label>Confianza para darlo por encontrado (0 a 1)<br><input id="insp-th" type="number" min="0.5" max="1" step="0.05"></label>
+        <label>Por debajo de esto, no lo encontró<br><input id="insp-unsure" type="number" min="0.2" max="0.9" step="0.05"></label>
+        <label>Texto si lo reconoce<br><textarea id="insp-confirm" placeholder="Encontré: {{product_name}}"></textarea></label>
+        <p class="muted">Unilo así: Esperar respuesta → “Si manda una foto” → este nodo. El catálogo tiene que tener fotos. El motor visual corre en el puerto 8011.</p>`;
+    }
     if (node.type === "create_order") {
       const qr = node.config.pay_qr_path || node.config.qr_url || "";
       html += `<label>Adelanto %<br><input id="insp-deposit" type="number" min="1" max="100"></label>
@@ -921,6 +948,27 @@
       dep.value = node.config.deposit_percent ?? 50;
       dep.addEventListener("input", (e) => {
         node.config.deposit_percent = Number(e.target.value);
+      });
+    }
+    const th = inspector.querySelector("#insp-th");
+    if (th) {
+      th.value = node.config.threshold ?? 0.85;
+      th.addEventListener("input", (e) => {
+        node.config.threshold = Number(e.target.value);
+      });
+    }
+    const uns = inspector.querySelector("#insp-unsure");
+    if (uns) {
+      uns.value = node.config.unsure ?? 0.6;
+      uns.addEventListener("input", (e) => {
+        node.config.unsure = Number(e.target.value);
+      });
+    }
+    const confirmEl = inspector.querySelector("#insp-confirm");
+    if (confirmEl) {
+      confirmEl.value = node.config.confirm_text || "";
+      confirmEl.addEventListener("input", (e) => {
+        node.config.confirm_text = e.target.value;
       });
     }
     const sl = inspector.querySelector("#insp-ship-local");

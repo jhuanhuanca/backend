@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     motor_ia_api_key: str = "dev-motor-ia-key-change-me"
     motor_ia_timeout: float = 20.0
 
+    motor_visual_url: str = "http://127.0.0.1:8011"
+    motor_visual_api_key: str = "dev-motor-ia-key-change-me"
+    motor_visual_timeout: float = 25.0
+    motor_visual_threshold: float = 0.85
+    motor_visual_unsure: float = 0.60
+
     app_env: str = "local"
     allowed_hosts: str = "*"
 

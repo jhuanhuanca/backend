@@ -158,6 +158,7 @@ async def send_as_customer_file(
                 name=name,
                 text=caption or None,
                 image_media_id=media_id,
+                image_path=str(dest) if kind == "image" else None,
             )
     except Exception as exc:  # noqa: BLE001
         replies = [f"El bot no pudo responder: {exc}"]

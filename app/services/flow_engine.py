@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import PROOFS_DIR, get_settings
 from app.models import BotFlow, Conversation, ConversationState, Product, utcnow
-from app.services import calls, deliveries, inbox, inventory, live, motor_client, orders, tenancy, wa_catalog, whatsapp
+from app.services import calls, deliveries, inbox, inventory, live, motor_client, orders, tenancy, visual_catalog, visual_client, wa_catalog, whatsapp
 from app.services.flow_definition import WAIT_TYPES
 from app.services.whatsapp import CloudError
 
@@ -49,6 +49,7 @@ async def handle_incoming(
     name: str,
     text: str | None,
     image_media_id: str | None = None,
+    image_path: str | None = None,
     flow: BotFlow | None = None,
 ) -> list[str]:
     phone = phone.lstrip("+")
@@ -136,9 +137,13 @@ async def handle_incoming(
         "image_media_id": None if schedule_advance else image_media_id,
         "is_image": bool(image_media_id) and not schedule_advance,
         "schedule_advance": schedule_advance,
+        "image_path": str(image_path or ""),
     }
     vars_["last_text"] = inbound["text"]
     vars_["currency"] = settings.currency
+    if inbound["is_image"] and not inbound["image_path"]:
+        photo = await inbox.latest_inbound_image(db, phone)
+        inbound["image_path"] = str(photo) if photo else ""
     if current is None or current.get("type") == "start":
         current = _start_node(nodes)
 
@@ -361,16 +366,18 @@ async def _run_node(
         return out, result
 
     if ntype == "match_product":
-        product = await wa_catalog.match_product(db, inbound.get("text") or "")
+        product = await _match_listed_or_text(db, inbound.get("text") or "", vars_)
         if product:
-            free = await inventory.available_stock(db, product.id)
-            vars_["product_id"] = product.id
-            vars_["product_name"] = product.name
-            vars_["product_price"] = f"{product.price:.2f}"
-            vars_["stock"] = str(free)
+            await _bind_product(db, vars_, product)
             result["match"] = "found"
         else:
             result["match"] = "not_found"
+        return out, result
+
+    if ntype == "match_image":
+        sent, match = await _run_visual_match(db, phone, inbound, vars_, config)
+        out.extend(sent)
+        result["match"] = match
         return out, result
 
     if ntype == "create_order":
@@ -550,6 +557,124 @@ async def _run_node(
     return out, result
 
 
+async def _bind_product(db: AsyncSession, vars_: dict[str, Any], product: Product) -> None:
+    free = await inventory.available_stock(db, product.id)
+    vars_["product_id"] = product.id
+    vars_["product_name"] = product.name
+    vars_["product_price"] = f"{product.price:.2f}"
+    vars_["stock"] = str(free)
+    vars_.pop("visual_choices", None)
+
+
+async def _match_listed_or_text(
+    db: AsyncSession, body: str, vars_: dict[str, Any]
+) -> Product | None:
+    text = wa_catalog.choice_value(body)
+    choices = vars_.get("visual_choices") or []
+    if text.isdigit() and isinstance(choices, list) and choices:
+        idx = int(text) - 1
+        if 0 <= idx < len(choices):
+            product = await db.get(Product, str(choices[idx]))
+            if product:
+                return product
+    return await wa_catalog.match_product(db, body)
+
+
+async def _run_visual_match(
+    db: AsyncSession,
+    phone: str,
+    inbound: dict[str, Any],
+    vars_: dict[str, Any],
+    config: dict[str, Any],
+) -> tuple[list[str], str]:
+    path = Path(str(inbound.get("image_path") or ""))
+    if not path.is_file():
+        photo = await inbox.latest_inbound_image(db, phone)
+        path = photo or Path()
+    if not path.is_file():
+        return ["Mandame una foto o captura del producto (del live o del catálogo)."], "not_found"
+    cid = await tenancy.resolve_company_id(db)
+    if not cid:
+        return ["No hay empresa activa para comparar el catálogo."], "not_found"
+    threshold = float(config.get("threshold") or settings.motor_visual_threshold)
+    unsure_cut = float(config.get("unsure") or settings.motor_visual_unsure)
+
+    async def _query():
+        return await visual_client.match_image(
+            cid,
+            str(path),
+            top_k=int(config.get("top_k") or 3),
+            threshold=threshold,
+            unsure=unsure_cut,
+        )
+
+    hit = await _query()
+    if hit is None or (hit.get("estado") in {"no_encontrado", "error"} and not hit.get("alternativas")):
+        await visual_catalog.reindex_current(db)
+        hit = await _query()
+    if not hit or hit.get("estado") in {None, "error"}:
+        return [
+            "No pude comparar la foto ahora. Escribí el nombre o el número del catálogo."
+        ], "not_found"
+    estado = hit.get("estado")
+    if estado == "match":
+        raw = hit.get("producto") or {}
+        product = await db.get(Product, str(raw.get("product_id") or ""))
+        if not product:
+            return ["Encontré algo parecido, pero ya no está en el inventario."], "not_found"
+        await _bind_product(db, vars_, product)
+        score = raw.get("score")
+        tmpl = str(
+            config.get("confirm_text")
+            or "Encontré: {{product_name}} — {{product_price}} {{currency}}.\n¿Es este? Si sí, decime la cantidad."
+        )
+        text = _render(tmpl, vars_)
+        if score is not None:
+            text = f"{text}\n(coincidencia {float(score) * 100:.0f}%)"
+        extra: list[str] = []
+        if (product.image_url or "").strip():
+            await wa_catalog._send_catalog_image(db, phone, product.image_url, text)
+        else:
+            extra.append(text)
+        return extra, "found"
+    if estado == "dudoso":
+        alts = hit.get("alternativas") or []
+        products: list[Product] = []
+        seen: set[str] = set()
+        for item in alts:
+            pid = str(item.get("product_id") or "")
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            row = await db.get(Product, pid)
+            if row:
+                products.append(row)
+        if not products:
+            return ["No lo ubiqué. Escribí el nombre o tocá el catálogo."], "not_found"
+        vars_["visual_choices"] = [p.id for p in products]
+        lines = ["¿Cuál de estos es? Escribí el número:"]
+        items = []
+        for idx, product in enumerate(products, start=1):
+            lines.append(f"{idx}. {product.name} — {product.price:.2f} {settings.currency}")
+            items.append(
+                {
+                    "id": f"prod:{product.id}",
+                    "title": f"{idx}. {product.name}"[:24],
+                    "description": f"{product.price:.2f} {settings.currency}",
+                }
+            )
+        extra = await wa_catalog.present_choices(
+            db,
+            phone,
+            text="\n".join(lines),
+            items=items[:10],
+            button="Ver opciones",
+            preview="¿Cuál es?",
+        )
+        return extra, "unsure"
+    return ["No lo ubiqué. Mandame otra foto o escribí el nombre."], "not_found"
+
+
 def _money(value, default: str = "0") -> Decimal:
     try:
         raw = default if value in (None, "") else value
@@ -595,6 +720,8 @@ def _pick_edge(
         return _first(outgoing, "default") or _first(outgoing, "always")
     if last_result.get("match") == "found":
         return _first(outgoing, "found") or _first(outgoing, "always")
+    if last_result.get("match") == "unsure":
+        return _first(outgoing, "unsure") or _first(outgoing, "not_found") or _first(outgoing, "default")
     if last_result.get("match") == "not_found":
         return _first(outgoing, "not_found") or _first(outgoing, "default")
     if last_result.get("transition"):

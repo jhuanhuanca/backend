@@ -266,6 +266,7 @@ async def upload_product_photo(
 ):
     if not request.session.get("user"):
         return JSONResponse({"detail": "login"}, status_code=401)
+    tenancy.bind_request(request)
     product = await db.get(Product, product_id)
     if not product:
         return JSONResponse({"detail": "producto no encontrado"}, status_code=404)
@@ -274,6 +275,12 @@ async def upload_product_photo(
         return JSONResponse({"detail": err}, status_code=400)
     product.image_url = url or ""
     await db.commit()
+    try:
+        from app.services import visual_catalog
+
+        await visual_catalog.reindex_current(db)
+    except Exception:
+        pass
     return {"ok": True, "url": url, "product_id": product.id}
 
 

@@ -202,6 +202,25 @@ async def list_messages(db: AsyncSession, phone: str, limit: int = 200) -> list[
     return rows
 
 
+async def latest_inbound_image(db: AsyncSession, phone: str) -> Path | None:
+    conv = await tenancy.get_conversation(db, phone)
+    if not conv:
+        return None
+    msg = await db.scalar(
+        select(ChatMessage)
+        .where(
+            ChatMessage.conversation_id == conv.id,
+            ChatMessage.direction == "inbound",
+            ChatMessage.msg_type.in_(["image", "sticker", "video"]),
+        )
+        .order_by(desc(ChatMessage.created_at))
+    )
+    if not msg or not (msg.media_path or "").strip():
+        return None
+    path = Path(msg.media_path)
+    return path if path.is_file() else None
+
+
 def parse_inbound_payload(message: dict) -> dict:
     msg_type = message.get("type") or "text"
     body = ""

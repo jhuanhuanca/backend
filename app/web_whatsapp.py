@@ -4,15 +4,16 @@ import json
 import logging
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.config import get_settings
 from app.database import get_db
-from app.models import ChatMessage
+from app.models import ChatMessage, Conversation
 from app.services import inbox, simulator, tenancy, whatsapp
 from app.web import require_superadmin, require_user, templates
 
@@ -39,13 +40,27 @@ def _company_id(request: Request) -> str | None:
     return request.session.get("company_id")
 
 
+def _as_upload(value) -> StarletteUploadFile | None:
+    if isinstance(value, StarletteUploadFile):
+        return value
+    return None
+
+
 async def _hub_context(request: Request, db: AsyncSession, **extra):
-    last = await db.scalar(select(ChatMessage).order_by(desc(ChatMessage.created_at)))
     companies = await whatsapp.list_companies(db)
     if request.session.get("role") != "superadmin":
         cid = _company_id(request)
         companies = [c for c in companies if c.id == cid]
     company = await whatsapp.get_company(db, _company_id(request))
+    last_q = (
+        select(ChatMessage)
+        .join(Conversation, ChatMessage.conversation_id == Conversation.id)
+        .where(ChatMessage.direction == "inbound")
+        .order_by(desc(ChatMessage.created_at))
+    )
+    if company:
+        last_q = last_q.where(Conversation.company_id == company.id)
+    last = await db.scalar(last_q)
     ctx = {
         "app_name": settings.app_name,
         "user": request.session.get("user"),
@@ -185,11 +200,11 @@ async def whatsapp_send(
         )
     text = str(form.get("body") or "").strip()
     voice = str(form.get("voice") or "") in {"1", "on", "true", "yes"}
-    media = form.get("media")
+    media = _as_upload(form.get("media"))
     raw = b""
     filename = ""
     mime = ""
-    if isinstance(media, UploadFile):
+    if media:
         raw = await media.read()
         filename = (media.filename or "").strip()
         mime = media.content_type or ""
@@ -306,27 +321,32 @@ async def simulator_message(
 
 
 @router.post("/whatsapp/simulador/media")
-async def simulator_media(request: Request, db: AsyncSession = Depends(get_db)):
+async def simulator_media(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    media: UploadFile = File(...),
+    phone: str = Form(""),
+    name: str = Form(""),
+    text: str = Form(""),
+):
     _require_json_user(request)
-    form = await request.form()
-    media = form.get("media")
-    if not isinstance(media, UploadFile):
-        raise HTTPException(400, "Adjuntá un archivo")
     raw = await media.read()
     if not raw:
         raise HTTPException(400, "Archivo vacío")
-    kind = inbox.kind_from_upload(media.content_type or "", media.filename or "")
+    filename = media.filename or "archivo"
+    mime = media.content_type or ""
+    kind = inbox.kind_from_upload(mime, filename)
     if len(raw) > inbox.MAX_BYTES.get(kind, inbox.MAX_BYTES["document"]):
         raise HTTPException(400, "El archivo pesa demasiado")
     try:
         return await simulator.send_as_customer_file(
             db,
-            phone=str(form.get("phone") or simulator.DEFAULT_PHONE),
-            name=str(form.get("name") or simulator.DEFAULT_NAME),
-            caption=str(form.get("text") or ""),
+            phone=phone or simulator.DEFAULT_PHONE,
+            name=name or simulator.DEFAULT_NAME,
+            caption=text,
             raw=raw,
-            mime=media.content_type or "",
-            filename=media.filename or "archivo",
+            mime=mime,
+            filename=filename,
         )
     except Exception:
         log.exception("No se pudo guardar media en el simulador")

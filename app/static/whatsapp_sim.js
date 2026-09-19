@@ -30,6 +30,17 @@
     return (phoneEl.value || "").replace(/\D/g, "") || "59170009999";
   }
 
+  function apiDetail(data, fallback) {
+    const detail = data && data.detail;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail) && detail.length) {
+      const first = detail[0];
+      if (typeof first === "string") return first;
+      if (first && first.msg) return first.msg;
+    }
+    return fallback;
+  }
+
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, "&amp;")
@@ -281,8 +292,7 @@
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const detail = data.detail || data.message || "No se pudo enviar el archivo";
-        throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+        throw new Error(apiDetail(data, "No se pudo enviar el archivo"));
       }
       bootData = data;
       textEl.value = "";

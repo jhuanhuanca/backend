@@ -96,7 +96,10 @@
 
   <p class="muted">Webhook para Meta (HTTPS en producción):</p>
   <p class="code urlbox">{{ connection.webhook_url }}</p>
-  {% if last_inbound %}<p class="muted">Último mensaje en bandeja: {{ last_inbound }}</p>{% endif %}
+  <p class="muted">En Meta → tu app → WhatsApp → Configuración → Webhook: esa URL, el mismo Verify Token, y el campo <strong>messages</strong> tiene que estar suscrito. Sin eso Graph envía, pero los “hola” del cliente no llegan al Hub.</p>
+  {% if last_inbound %}<p class="muted">Último mensaje del cliente en esta empresa: {{ last_inbound }}</p>{% else %}
+  <p class="badge pendiente_pago">Todavía no llegó ningún mensaje real de un cliente a esta empresa. El simulador no cuenta.</p>
+  {% endif %}
 
   <form method="post" action="/whatsapp/probar" style="margin-top:8px">
     <button class="btn" type="submit">Probar conexión Graph API</button>
