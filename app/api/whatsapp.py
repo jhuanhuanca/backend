@@ -51,21 +51,23 @@ async def receive_webhook(
         raise HTTPException(status_code=400, detail="JSON inválido") from exc
     phone_id = _phone_number_id(payload)
     creds = await whatsapp.creds_for_phone_id(db, phone_id)
-    if not whatsapp.verify_signature(raw, x_hub_signature_256, creds):
+    ok, how = await whatsapp.verify_webhook_signature(db, raw, x_hub_signature_256)
+    if not ok:
         log.warning(
-            "firma inválida phone_id=%s company=%s skip=%s secret=%s",
+            "firma inválida phone_id=%s company=%s reason=%s header=%s",
             phone_id,
             creds.company_id,
-            creds.skip_signature,
-            bool(creds.app_secret),
+            how,
+            bool(x_hub_signature_256),
         )
         raise HTTPException(status_code=403, detail="Firma inválida")
     handled = await _dispatch(db, payload, creds)
     log.info(
-        "webhook ok phone_id=%s company=%s inbound=%s",
+        "webhook ok phone_id=%s company=%s inbound=%s firma=%s",
         phone_id,
         creds.company_id,
         handled,
+        how,
     )
     return {"ok": True}
 

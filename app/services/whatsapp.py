@@ -294,15 +294,78 @@ def _parse_graph_response(response: httpx.Response, object_id: str = "") -> dict
     return payload
 
 
-def verify_signature(raw_body: bytes, header: str | None, creds: Creds | None = None) -> bool:
-    skip = creds.skip_signature if creds else settings.whatsapp_skip_signature
-    secret = (creds.app_secret if creds else settings.whatsapp_app_secret) or ""
-    if skip or not secret:
-        return True
-    if not header or not header.startswith("sha256="):
+def _hub_signature_hex(header: str | None) -> str:
+    raw = (header or "").strip()
+    if not raw.lower().startswith("sha256="):
+        return ""
+    return raw.split("=", 1)[1].strip().lower()
+
+
+def _hmac_sha256_hex(secret: str, body: bytes) -> str:
+    return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+
+
+def signature_matches(raw_body: bytes, header: str | None, secret: str) -> bool:
+    got = _hub_signature_hex(header)
+    key = (secret or "").strip()
+    if not got or not key:
         return False
-    expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(header[7:], expected)
+    expected = _hmac_sha256_hex(key, raw_body)
+    if len(got) != len(expected):
+        return False
+    return hmac.compare_digest(got, expected)
+
+
+def verify_signature(raw_body: bytes, header: str | None, creds: Creds | None = None) -> bool:
+    """HMAC de un solo secreto (la empresa del phone_number_id). Preferí verify_webhook_signature."""
+    skip = creds.skip_signature if creds else settings.whatsapp_skip_signature
+    secret = ((creds.app_secret if creds else None) or settings.whatsapp_app_secret or "").strip()
+    if skip and not secret:
+        return True
+    return signature_matches(raw_body, header, secret)
+
+
+async def webhook_signature_secrets(db: AsyncSession) -> list[tuple[str, str]]:
+    """Secretos con los que Meta puede haber firmado (una app por empresa o la del .env)."""
+    found: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(source: str, secret: str) -> None:
+        key = (secret or "").strip()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        found.append((source, key))
+
+    add("env", settings.whatsapp_app_secret)
+    accounts = list(
+        await db.scalars(select(WhatsAppAccount).options(selectinload(WhatsAppAccount.company)))
+    )
+    for account in accounts:
+        label = (account.company.name if account.company else "") or account.phone_number_id or "db"
+        add(f"db:{label}", decrypt_secret(account.app_secret_enc))
+    return found
+
+
+async def verify_webhook_signature(
+    db: AsyncSession, raw_body: bytes, header: str | None
+) -> tuple[bool, str]:
+    """
+    Meta firma con el App Secret de LA APP que tiene el webhook, no con el token del número.
+    En multi-empresa hay que probar el .env y el secret de cada tenant.
+    """
+    got = _hub_signature_hex(header)
+    candidates = await webhook_signature_secrets(db)
+    if not got:
+        return False, "sin-header"
+    if not candidates:
+        if settings.whatsapp_skip_signature and not settings.is_production:
+            return True, "skip-local"
+        return False, "sin-secret"
+    for source, secret in candidates:
+        if signature_matches(raw_body, header, secret):
+            return True, source
+    return False, "no-match"
 
 
 async def send_text(
