@@ -15,7 +15,7 @@ from app.services import conversation, inbox, tenancy, whatsapp
 from app.services.whatsapp import CloudError, use_creds
 
 router = APIRouter(tags=["whatsapp"])
-log = logging.getLogger("whatsapp.webhook")
+log = logging.getLogger("uvicorn.error")
 
 
 class SimulateIn(BaseModel):
@@ -154,6 +154,8 @@ async def _dispatch(db: AsyncSession, payload: dict) -> int:
             creds = await whatsapp.creds_for_inbound(
                 db, phone_number_id=phone_id, display_phone=display
             )
+            if creds:
+                await db.commit()
             log.info(
                 "webhook field=%s messages=%s statuses=%s display=%s phone_id=%s company=%s",
                 change.get("field"),

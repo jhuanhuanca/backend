@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextvars
 import hashlib
 import hmac
+import logging
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ settings = get_settings()
 _E164 = re.compile(r"[^\d]")
 _skip_cloud = contextvars.ContextVar("wa_skip_cloud", default=False)
 _active_creds = contextvars.ContextVar("wa_active_creds", default=None)
+log = logging.getLogger("uvicorn.error")
 
 
 def cloud_skipped() -> bool:
@@ -209,26 +211,43 @@ async def creds_for_inbound(
             .options(selectinload(WhatsAppAccount.company))
         )
     )
+    found: WhatsAppAccount | None = None
     if pid:
         for account in accounts:
             stored = (account.phone_number_id or "").strip()
             if stored and stored == pid:
-                return _from_account(account)
-        if pid_digits:
+                found = account
+                break
+        if found is None and pid_digits:
             for account in accounts:
                 stored = _digits(account.phone_number_id or "")
                 if stored and stored == pid_digits:
-                    return _from_account(account)
-    if e164:
+                    found = account
+                    break
+    if found is None and e164:
         for account in accounts:
             stored = normalize_e164(account.business_e164)
-            if stored and stored == e164:
-                return _from_account(account)
-            if stored and e164.endswith(stored[-8:]) and len(stored) >= 8:
-                return _from_account(account)
-            if stored and stored.endswith(e164[-8:]) and len(e164) >= 8:
-                return _from_account(account)
-    return None
+            if not stored:
+                continue
+            if stored == e164 or (
+                len(stored) >= 8 and len(e164) >= 8 and (e164.endswith(stored[-8:]) or stored.endswith(e164[-8:]))
+            ):
+                found = account
+                break
+    if not found:
+        return None
+    creds = _from_account(found)
+    if pid and creds.phone_number_id != pid:
+        log.warning(
+            "Phone Number ID de Meta %s no era el guardado %s (%s); uso el de Meta",
+            pid,
+            creds.phone_number_id,
+            creds.company_name,
+        )
+        creds.phone_number_id = pid
+        found.phone_number_id = pid
+        await db.flush()
+    return creds
 
 
 async def verify_token_ok(db: AsyncSession, incoming: str | None) -> bool:
